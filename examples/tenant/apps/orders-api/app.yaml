@@ -1,0 +1,23 @@
+# Exemplo de API Aedis (usado pelo CI para validar o template do tenant).
+name: orders-api
+namespace: shop
+type: api
+owner: shop-team
+catalog:
+  description: API de pedidos (exemplo)
+  repository: example/orders-api
+image:
+  repository: ghcr.io/aedis-build/examples/orders-api
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+secrets:
+  keys:
+    - name: Database__ConnectionString
+      key: orders-api
+      property: ConnectionString
+ingress:
+  enabled: true
+  hosts: [orders.example.internal]
+  edge:
+    waf: false

@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Aedis.Cli</RootNamespace>
+    <AssemblyName>aedis</AssemblyName>
+    <PackAsTool>true</PackAsTool>
+    <ToolCommandName>aedis</ToolCommandName>
+    <PackageId>aedis-cli</PackageId>
+    <Version>0.1.0</Version>
+    <Authors>Aedis</Authors>
+    <Description>CLI do Aedis Platform: cria o repositório GitOps, declara apps e valida (chart, schema, kubeconform, níveis de conformidade).</Description>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/aedis-build/aedis-platform</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/aedis-build/aedis-platform</RepositoryUrl>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.CommandLine" Version="2.0.0" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="..\..\template\tenant\**\*" LogicalName="tenant/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\conformance\levels.yaml" LogicalName="conformance/levels.yaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Aedis.Cli.Tests" />
+  </ItemGroup>
+
+</Project>

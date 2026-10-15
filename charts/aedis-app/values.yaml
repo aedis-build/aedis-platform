@@ -1,0 +1,382 @@
+# Defaults do chart aedis-app. No repo GitOps do tenant cada app sobrescreve em três camadas:
+#   platform/values/<env>.yaml  (fatos do cluster/ambiente)  ->  apps/<app>/app.yaml  ->  apps/<app>/env/<env>.yaml
+# Mapas mesclam, listas substituem. Nada de fornecedor é ligado por padrão: tudo entra por preset.
+
+# --- identidade do app (app.yaml) ---
+name: ""
+namespace: ""
+# api | worker | cronjob
+type: api
+# Time dono (slug; vai para a label aedis.build/owner e para o portal).
+owner: ""
+# Bloco livre para catálogo de portal (Backstage ou o portal do Aedis Platform). O chart não renderiza nada daqui.
+catalog: {}
+
+# --- ambiente (platform/values/<env>.yaml e env/<env>.yaml) ---
+# Nome livre do ambiente (dev, staging, prod, sandbox...). Vai para labels e para OTEL deployment.environment.
+environment: ""
+# nonprod | prod. Decide ASPNETCORE_ENVIRONMENT, HSTS e, no schema, a exigência de image.digest.
+environmentClass: nonprod
+
+cloud:
+  # aws | azure | digitalocean | generic. Define os defaults de identidade, KEDA e segredos.
+  provider: generic
+  # Região da nuvem (KEDA SQS, presets). Vazio = não informada.
+  region: ""
+
+# Integração com o framework Aedis: o chart deriva as variáveis de ambiente que configuram o host
+# (ASPNETCORE_ENVIRONMENT, Telemetry__*, Security__ForwardedHeaders__*, Security__HostHeaders__*...).
+# Desligue para usar o chart com uma app que não é Aedis.
+framework:
+  enabled: true
+  # Sobrescreve o ASPNETCORE_ENVIRONMENT/DOTNET_ENVIRONMENT derivado de environmentClass.
+  aspnetEnvironment: ""
+  # Redes do proxy/ingress confiáveis para X-Forwarded-* (Security__ForwardedHeaders__KnownNetworks).
+  # Vazio = usa ingress.proxyNetworks.
+  proxyNetworks: []
+  # Hosts extras aceitos em Security__HostHeaders__AllowedHosts (os de ingress.hosts e o Service já entram).
+  allowedHosts: []
+  # Env extra do framework (chave__subchave: valor), mesclado por último.
+  env: {}
+
+image:
+  # Qualquer registry OCI (ghcr.io/org/app, 123.dkr.ecr.us-east-1.amazonaws.com/app, org.azurecr.io/app, registry.digitalocean.com/org/app).
+  repository: ""
+  # Semver. Em não-prod escrita pelo argocd-image-updater; em prod pelo PR de promoção.
+  tag: ""
+  # sha256:... Quando presente a imagem é referenciada por digest (repo@digest); obrigatório em environmentClass=prod (L2+).
+  digest: ""
+  pullPolicy: IfNotPresent
+  # Secrets de pull (nome). Vazio = registry sem autenticação ou credencial do nó/identidade.
+  pullSecrets: []
+
+# Ignorado quando há HPA ou KEDA (o autoscaler é dono de spec.replicas).
+replicas: 1
+
+availability:
+  # Piso de réplicas de type api em todos os ambientes (vale para replicas e minReplicas do HPA/KEDA). 0 desliga.
+  apiMinReplicas: 2
+  # PDB quando o mínimo efetivo de réplicas é >= 2 (com 1 réplica o PDB só trava o dreno do nó).
+  pdb:
+    enabled: true
+    maxUnavailable: 1
+  topologySpread:
+    enabled: true
+    maxSkew: 1
+    whenUnsatisfiable: ScheduleAnyway
+    topologyKeys:
+      - topology.kubernetes.io/zone
+      - kubernetes.io/hostname
+    # Lista completa no formato do Pod (substitui topologyKeys).
+    constraints: []
+
+# kubernetes.io/arch: amd64 | arm64. Vazio = qualquer (imagem multi-arch).
+architecture: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+security:
+  # UID/GID do processo. 1654 é o $APP_UID das imagens mcr.microsoft.com/dotnet/*-chiseled.
+  uid: 1654
+  gid: 1654
+  # emptyDir em /tmp (sempre montado: o root filesystem é read-only). Vazio = sem limite.
+  tmpSizeLimit: ""
+  # Outros caminhos graváveis (emptyDir), com o root filesystem continuando read-only.
+  writablePaths: []
+  #   - path: /app/cache
+  #     sizeLimit: 1Gi
+
+container:
+  # Default: api | worker | job, conforme o type.
+  name: ""
+  port: 8080
+  # Default: http (api) | health (worker).
+  portName: ""
+  terminationGracePeriodSeconds: 120
+  # preStop (sleep nativo do kubelet) para o Service tirar o pod antes do SIGTERM. 0 desliga.
+  preStopSeconds: 15
+  # Env extra (formato do Pod), mesclada por último.
+  env: []
+  # Comando/args opcionais (imagens com ENTRYPOINT já definido não precisam).
+  command: []
+  args: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+probes:
+  enabled: true
+  liveness:
+    path: /health/live
+    initialDelaySeconds: 30
+    periodSeconds: 30
+    timeoutSeconds: 10
+    failureThreshold: 3
+  readiness:
+    path: /health/ready
+    initialDelaySeconds: 10
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 3
+  startup:
+    path: /health/live
+    initialDelaySeconds: 15
+    periodSeconds: 5
+    timeoutSeconds: 10
+    failureThreshold: 30
+
+service:
+  annotations: {}
+  labels: {}
+
+# Identidade de workload: a app fala com a nuvem sem chave estática.
+identity:
+  enabled: false
+  # Nome da ServiceAccount. Vazio = <name>.
+  serviceAccountName: ""
+  # automountServiceAccountToken do pod. IRSA e Azure Workload Identity injetam token projetado por
+  # webhook, então o token padrão não é necessário. Ligue só se a app chama a API do Kubernetes.
+  automountToken: false
+  annotations: {}
+  aws:
+    # arn:aws:iam::<conta>:role/<role>. Alternativa: accountId + roleName (o chart monta o ARN).
+    roleArn: ""
+    accountId: ""
+    # Vazio = <name>
+    roleName: ""
+  azure:
+    clientId: ""
+    tenantId: ""
+
+# ExternalSecret -> Secret <name>-secret (envFrom). As chaves são as mesmas em todos os ambientes;
+# só secrets.prefix muda por ambiente.
+secrets:
+  # aws | azure | vault | generic. Vazio = derivado de cloud.provider (aws->aws, azure->azure, outros->vault).
+  provider: ""
+  store:
+    # Nome do (Cluster)SecretStore instalado no cluster (ver charts/aedis-cluster).
+    name: aedis-secrets
+    kind: ClusterSecretStore
+  # Prefixo por ambiente: caminho KV (vault: "apps/prod"), prefixo de nome (aws: "prod", azure: "prod").
+  prefix: ""
+  refreshInterval: 1m
+  # Template do remoteRef.key quando a convenção por provider não serve. Variáveis: .prefix, .key, .provider.
+  keyTemplate: ""
+  # Uma chave do Secret por item. key = nome/caminho do segredo no cofre (sem o prefixo);
+  # property = campo dentro do segredo (obrigatório no Vault; chave JSON na AWS; opcional no Azure).
+  keys: []
+  #   - name: Database__ConnectionString
+  #     key: orders-api
+  #     property: ConnectionString
+  # Segredos inteiros (JSON) despejados em variáveis: um item por segredo do cofre.
+  dataFrom: []
+  #   - key: orders-api
+  # ExternalSecrets adicionais (ex.: credencial de trigger do KEDA): <name>-<extra.name> -> Secret <name>-<extra.name>.
+  extra: []
+  #   - name: keda
+  #     keys: [...]
+  # Configuração de runtime do Aedis.Secrets (opcional): só para apps que leem o cofre em runtime.
+  runtime:
+    enabled: false
+    # AwsSecretsManager__Region, AzureKeyVault__VaultUri, Vault__Address
+    awsRegion: ""
+    azureVaultUri: ""
+    vaultAddress: ""
+
+# Exposição HTTP (só type api).
+ingress:
+  enabled: false
+  # nginx | alb | agic | kong | do-nginx | none. Cada preset injeta as anotações/CRDs do controlador.
+  preset: nginx
+  # Sobrescreve a ingressClassName do preset.
+  className: ""
+  hosts: []
+  # Caminhos (ignorado pelo preset kong, que usa routes).
+  paths:
+    - path: /
+      pathType: Prefix
+  # Rotas do Kong: uma Ingress por rota, com os métodos dela. Só sai o que está listado.
+  routes: []
+  #   - path: /v1/orders
+  #     pathType: Prefix
+  #     methods: [GET, POST]
+  #     plugins: [rate-limit]
+  tls:
+    enabled: true
+    # Secret TLS (cert-manager ou importado). Vazio = o controlador resolve (ALB/ACM, AGIC, anotações).
+    secretName: ""
+  # Anotações extras, mescladas por último (sobrescrevem as do preset).
+  annotations: {}
+  # Redes do proxy confiáveis para X-Forwarded-* (CIDR). Normalmente a VPC/VNet do ambiente.
+  proxyNetworks: []
+  edge:
+    # Declaração: há WAF na frente da exposição. Não renderiza nada; lido pelo DAST e pela conformidade.
+    waf: false
+  alb:
+    scheme: internet-facing
+    groupName: ""
+    certificateArn: ""
+    sslPolicy: ELBSecurityPolicy-TLS13-1-2-Res-2021-06
+    subnets: []
+    inboundCidrs: []
+    deregistrationDelaySeconds: 30
+    healthcheck:
+      path: ""
+      successCodes: "200"
+      intervalSeconds: 10
+      timeoutSeconds: 5
+      healthyThreshold: 2
+      unhealthyThreshold: 2
+  agic:
+    # Nome do certificado no Application Gateway (appgw-ssl-certificate). Vazio = tls.secretName.
+    sslCertificate: ""
+    backendProtocol: http
+  nginx:
+    proxyBodySize: 30m
+  kong:
+    stripPath: false
+    upstream:
+      algorithm: round-robin
+      hashOn: {}
+      healthchecks: {}
+    plugins: {}
+    defaultPlugins: []
+
+autoscaling:
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 6
+    cpuUtilization: 70
+  keda:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 15
+    pollingInterval: 10
+    cooldownPeriod: 60
+    advanced: {}
+    # Horário de funcionamento (só worker): no horário fica em max(1, minReplicas) por um trigger cron;
+    # fora dele vai a zero e as filas acordam o worker.
+    businessHours:
+      enabled: false
+      timezone: UTC
+      start: "0 8 * * 1-5"
+      end: "0 18 * * 1-5"
+    # Filas: um trigger por item. kind: sqs | azure-servicebus | azure-queue | rabbitmq.
+    queues: []
+    #   - kind: sqs
+    #     queueUrlFromEnv: SQS_QUEUE_URL     # ou queueUrl
+    #     queueLength: "10"
+    #   - kind: azure-servicebus
+    #     queueName: orders                   # ou topicName + subscriptionName
+    #     namespaceFromEnv: SERVICEBUS_NAMESPACE
+    #     messageCount: "10"
+    #   - kind: rabbitmq
+    #     queueName: orders
+    #     hostFromEnv: RABBITMQ_HOST
+    #     value: "10"
+    # Triggers no formato do ScaledObject, somados aos de queues.
+    triggers: []
+    # TriggerAuthentications extras: nome -> spec (criadas como <name>-<nome>-trigger-auth).
+    authentications: {}
+
+rollout:
+  # canary | rolling (Deployment padrão, sem Argo Rollouts).
+  strategy: canary
+  revisionHistoryLimit: 3
+  steps:
+    - setWeight: 25
+    - pause: { duration: 5m }
+    - setWeight: 50
+    - pause: { duration: 5m }
+    - setWeight: 75
+    - pause: { duration: 5m }
+  analysis:
+    enabled: true
+    # prometheus | datadog | newrelic | cloudwatch | web | none. Define os args passados aos templates.
+    provider: prometheus
+    # Nomes dos ClusterAnalysisTemplates (instalados por charts/aedis-cluster). Vazio = default por type.
+    templates: []
+    # Args extras (formato do Rollout).
+    args: []
+
+observability:
+  metrics:
+    enabled: true
+    path: /metrics
+    servicePort: 8081
+    interval: 30s
+    scrapeTimeout: 10s
+    serviceMonitor:
+      enabled: true
+      # Labels extras do ServiceMonitor (ex.: release: prometheus, para o seletor do operador).
+      labels: {}
+  otlp:
+    # http://otel-collector.observability:4317. Vazio = telemetria OTLP desligada no Aedis.
+    endpoint: ""
+    # grpc | http/protobuf
+    protocol: grpc
+    # Chave do Secret <name>-secret com a API key do backend (Telemetry__OtlpApiKey). Vazio = sem header.
+    apiKeySecretKey: ""
+    metrics: true
+    traces: true
+    logs: true
+  # OTEL_RESOURCE_ATTRIBUTES extras (chave: valor).
+  resourceAttributes: {}
+  vendor:
+    # none | datadog | splunk | dynatrace | newrelic. Só adiciona labels/anotações/env do agente do fornecedor.
+    name: none
+    options: {}
+
+# NetworkPolicy de egresso (opt-in por ambiente: precisa dos CIDRs do data plane). Exigida no nível L2.
+networkPolicy:
+  egress:
+    enabled: false
+    # CIDR da VPC/VNet do ambiente (banco, cache, endpoints privados).
+    allowedCidrs: []
+    # Faixas tiradas de 0.0.0.0/0: metadados de instância (AWS/Azure/DO), wireserver do Azure, redes privadas, CGNAT.
+    blockedCidrs:
+      - 169.254.0.0/16
+      - 168.63.129.16/32
+      - 10.0.0.0/8
+      - 172.16.0.0/12
+      - 192.168.0.0/16
+      - 127.0.0.0/8
+      - 100.64.0.0/10
+    # Namespace do DNS do cluster.
+    dnsNamespace: kube-system
+    extraEgress: []
+  ingress:
+    enabled: false
+    monitoringNamespaces: [monitoring]
+    controllerNamespaces: []
+    sourceCidrs: []
+    extraIngress: []
+
+cronjob:
+  schedule: ""
+  timeZone: UTC
+  suspend: false
+  concurrencyPolicy: Forbid
+  backoffLimit: 2
+  startingDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 86400
+
+# Hooks do ArgoCD.
+hooks:
+  # Jobs genéricos: [{name, phase: PreSync|Sync|PostSync, image, command, args, env}]
+  jobs: []
+  # Remoção de objetos legados (migração de outro deploy) por um Job PostSync com Role mínima.
+  # Chaves: deployments, horizontalpodautoscalers, verticalpodautoscalers, scaledobjects, triggerauthentications, servicemonitors, externalsecrets.
+  cleanup: {}
+  image: registry.k8s.io/kubectl:v1.31.0
+
+# Lido pelo ApplicationSet do tenant, não pelo chart.
+sync:
+  automated: true

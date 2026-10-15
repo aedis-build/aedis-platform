@@ -1,0 +1,10 @@
+rendered/
+*.tgz
+.aedis-platform/
+bin/
+obj/
+*.user
+.vs/
+.idea/
+__pycache__/
+TestResults/

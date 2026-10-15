@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="Aedis.Cli/Aedis.Cli.csproj" />
+  <Project Path="Aedis.Cli.Tests/Aedis.Cli.Tests.csproj" />
+</Solution>

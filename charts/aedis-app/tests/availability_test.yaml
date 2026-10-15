@@ -1,0 +1,43 @@
+suite: disponibilidade (PDB, piso de réplicas, topologia)
+templates:
+  - pdb.yaml
+  - rollout.yaml
+tests:
+  - it: API tem piso de 2 réplicas e PDB
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+        template: rollout.yaml
+      - isKind:
+          of: PodDisruptionBudget
+        template: pdb.yaml
+      - equal:
+          path: spec.maxUnavailable
+          value: 1
+        template: pdb.yaml
+
+  - it: worker com 1 réplica não ganha PDB
+    template: pdb.yaml
+    values:
+      - ../ci/worker-generic-rabbitmq.yaml
+    set:
+      autoscaling.keda.enabled: false
+      replicas: 1
+    asserts:
+      - hasDocuments:
+          count: 0
+
+  - it: topologySpread por zona e nó com o seletor do app
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.topologySpreadConstraints
+          count: 2
+      - equal:
+          path: spec.template.spec.topologySpreadConstraints[0].topologyKey
+          value: topology.kubernetes.io/zone

@@ -1,0 +1,62 @@
+suite: hooks do ArgoCD
+templates:
+  - hooks.yaml
+tests:
+  - it: cleanup gera SA, Role mínima, RoleBinding e Job PostSync com os alvos
+    values:
+      - ../ci/cronjob-generic.yaml
+    asserts:
+      - hasDocuments:
+          count: 4
+      - isKind:
+          of: Role
+        documentIndex: 1
+      - equal:
+          path: rules[0].resourceNames[0]
+          value: reconcile-job-old
+        documentIndex: 1
+      - isKind:
+          of: Job
+        documentIndex: 3
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: PostSync
+        documentIndex: 3
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: deployments.apps/reconcile-job-old
+        documentIndex: 3
+
+  - it: kind não suportado no cleanup é barrado pelo schema
+    values:
+      - ../ci/cronjob-generic.yaml
+    set:
+      hooks.cleanup:
+        pods: [x]
+    asserts:
+      - failedTemplate:
+          errorPattern: "schema"
+
+  - it: job genérico herda imagem, env e baseline do app
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      hooks.jobs:
+        - name: migrate
+          phase: PreSync
+          args: ["--migrate"]
+    asserts:
+      - hasDocuments:
+          count: 1
+      - equal:
+          path: metadata.name
+          value: orders-api-migrate
+      - equal:
+          path: metadata.annotations["argocd.argoproj.io/hook"]
+          value: PreSync
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/example/orders-api:1.4.0-rc.2
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true

@@ -1,0 +1,18 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  validate:
+    uses: aedis-build/aedis-platform/.github/workflows/validate.yml@__AEDIS_PLATFORM_REF__
+    permissions:
+      contents: read
+    with:
+      platform-ref: __AEDIS_PLATFORM_REF__
+      chart: __AEDIS_CHART__
+      chart-version: "__AEDIS_CHART_VERSION__"

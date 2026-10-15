@@ -1,0 +1,49 @@
+suite: NetworkPolicy anti-SSRF
+templates:
+  - networkpolicy.yaml
+tests:
+  - it: egresso bloqueia metadados de instância das três nuvens e redes privadas
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+      - equal:
+          path: metadata.name
+          value: orders-api-egress
+        documentIndex: 0
+      - contains:
+          path: spec.egress[2].to[0].ipBlock.except
+          content: 169.254.0.0/16
+        documentIndex: 0
+      - contains:
+          path: spec.egress[2].to[0].ipBlock.except
+          content: 168.63.129.16/32
+        documentIndex: 0
+      - equal:
+          path: spec.egress[1].to[0].ipBlock.cidr
+          value: 10.20.0.0/16
+        documentIndex: 0
+
+  - it: entrada só da porta do container, do namespace, da monitoração e do controlador
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - equal:
+          path: spec.ingress[0].ports[0].port
+          value: 8080
+        documentIndex: 1
+      - contains:
+          path: spec.ingress[0].from
+          content:
+            namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: ingress-nginx
+        documentIndex: 1
+
+  - it: desligada por padrão
+    values:
+      - ../ci/worker-azure-keda.yaml
+    asserts:
+      - hasDocuments:
+          count: 0

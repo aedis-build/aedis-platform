@@ -1,0 +1,6 @@
+environment: prod
+image:
+  tag: 0.1.0
+  digest: sha256:1111111111111111111111111111111111111111111111111111111111111111
+sync:
+  automated: false

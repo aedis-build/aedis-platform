@@ -1,0 +1,28 @@
+# API no AKS com Application Gateway Ingress Controller.
+name: billing-api
+namespace: fin
+type: api
+environment: prod
+environmentClass: prod
+cloud:
+  provider: azure
+image:
+  repository: example.azurecr.io/billing-api
+  digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+identity:
+  enabled: true
+  azure:
+    clientId: 11111111-2222-3333-4444-555555555555
+secrets:
+  prefix: prod
+  keys:
+    - name: Database__ConnectionString
+      key: billing/db
+ingress:
+  enabled: true
+  preset: agic
+  hosts: [billing.example.com]
+  edge:
+    waf: true
+  agic:
+    sslCertificate: billing-cert

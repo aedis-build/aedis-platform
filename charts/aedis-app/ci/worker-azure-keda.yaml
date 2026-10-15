@@ -1,0 +1,39 @@
+# Worker no Azure: Workload Identity, Key Vault via ESO, KEDA com Service Bus e horário de funcionamento.
+name: notifications-worker
+namespace: comms
+type: worker
+environment: staging
+environmentClass: nonprod
+cloud:
+  provider: azure
+  region: brazilsouth
+image:
+  repository: example.azurecr.io/notifications-worker
+  tag: 0.9.1
+identity:
+  enabled: true
+  azure:
+    clientId: 11111111-2222-3333-4444-555555555555
+    tenantId: 66666666-7777-8888-9999-000000000000
+secrets:
+  prefix: staging
+  keys:
+    - name: ServiceBus__Namespace
+      key: notifications/servicebus-namespace
+    - name: Database__ConnectionString
+      key: notifications/db
+autoscaling:
+  keda:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 10
+    businessHours:
+      enabled: true
+      timezone: America/Sao_Paulo
+      start: "0 8 * * 1-5"
+      end: "0 18 * * 1-5"
+    queues:
+      - kind: azure-servicebus
+        queueName: notifications
+        namespaceFromEnv: ServiceBus__Namespace
+        messageCount: "20"

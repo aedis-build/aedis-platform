@@ -1,0 +1,82 @@
+{{- if eq .Values.type "cronjob" }}
+{{- $name := include "aedis.name" . }}
+{{- $c := .Values.cronjob }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "aedis.namespace" . }}
+  labels:
+    {{- include "aedis.labels" . | nindent 4 }}
+spec:
+  schedule: {{ required "cronjob.schedule é obrigatório para type cronjob" $c.schedule | quote }}
+  timeZone: {{ $c.timeZone | quote }}
+  concurrencyPolicy: {{ $c.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ $c.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  suspend: {{ $c.suspend }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ $c.backoffLimit }}
+      ttlSecondsAfterFinished: {{ $c.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels:
+            {{- include "aedis.podLabels" . | nindent 12 }}
+          {{- with (include "aedis.vendor.podAnnotations" . | trim) }}
+          annotations:
+            {{- . | nindent 12 }}
+          {{- end }}
+        spec:
+          restartPolicy: Never
+          serviceAccountName: {{ include "aedis.serviceAccountName" . }}
+          automountServiceAccountToken: {{ .Values.identity.automountToken }}
+          securityContext:
+            {{- include "aedis.podSecurityContext" . | nindent 12 }}
+          {{- with .Values.image.pullSecrets }}
+          imagePullSecrets:
+            {{- range . }}
+            - name: {{ . }}
+            {{- end }}
+          {{- end }}
+          {{- with (include "aedis.nodeSelector" . | trim) }}
+          nodeSelector:
+            {{- . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.tolerations }}
+          tolerations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.affinity }}
+          affinity:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          containers:
+            - name: {{ include "aedis.containerName" . }}
+              image: {{ include "aedis.image" . }}
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              {{- with .Values.container.command }}
+              command:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              {{- with .Values.container.args }}
+              args:
+                {{- toYaml . | nindent 16 }}
+              {{- end }}
+              securityContext:
+                {{- include "aedis.containerSecurityContext" . | nindent 16 }}
+              env:
+                {{- include "aedis.env" . | nindent 16 }}
+              {{- if or .Values.secrets.keys .Values.secrets.dataFrom }}
+              envFrom:
+                - secretRef:
+                    name: {{ $name }}-secret
+              {{- end }}
+              resources:
+                {{- toYaml .Values.resources | nindent 16 }}
+              volumeMounts:
+                {{- include "aedis.volumeMounts" . | nindent 16 }}
+          volumes:
+            {{- include "aedis.volumes" . | nindent 12 }}
+{{- end }}

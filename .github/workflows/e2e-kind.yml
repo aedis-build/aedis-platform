@@ -1,0 +1,43 @@
+# e2e do chart num cluster kind efêmero (Argo Rollouts + ESO fake + KEDA + CRD ServiceMonitor).
+name: e2e-kind
+
+on:
+  pull_request:
+    paths: ["charts/**", "examples/e2e/**", "scripts/e2e-kind.sh", ".github/workflows/e2e-kind.yml"]
+  push:
+    branches: [main]
+    paths: ["charts/**", "examples/e2e/**", "scripts/e2e-kind.sh", ".github/workflows/e2e-kind.yml"]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Instalar helm e kind
+        run: |
+          set -euo pipefail
+          HELM_VERSION=v3.18.4
+          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          KIND_VERSION=v0.27.0
+          curl -sSLo kind "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64" && chmod +x kind && sudo mv kind /usr/local/bin/kind
+          kind version && kubectl version --client
+
+      - name: e2e
+        run: bash scripts/e2e-kind.sh
+
+      - name: Diagnóstico em falha
+        if: failure()
+        run: |
+          kubectl get pods -A || true
+          kubectl -n shop describe rollout orders-api || true
+          kubectl -n shop describe externalsecret orders-api || true

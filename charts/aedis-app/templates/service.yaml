@@ -1,0 +1,39 @@
+{{- if ne .Values.type "cronjob" }}
+{{- $name := include "aedis.name" . }}
+{{- $portName := include "aedis.portName" . }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "aedis.namespace" . }}
+  labels:
+    {{- include "aedis.labels" . | nindent 4 }}
+    {{- with .Values.service.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- $ann := deepCopy .Values.service.annotations }}
+  {{- if and (eq .Values.type "api") .Values.ingress.enabled (eq .Values.ingress.preset "kong") }}
+  {{- $_ := set $ann "konghq.com/upstream-policy" (printf "%s-upstream" $name) }}
+  {{- end }}
+  {{- with $ann }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    {{- if eq .Values.type "api" }}
+    - port: {{ .Values.container.port }}
+      targetPort: {{ $portName }}
+      protocol: TCP
+      name: http
+    {{- end }}
+    {{- if .Values.observability.metrics.enabled }}
+    - port: {{ .Values.observability.metrics.servicePort }}
+      targetPort: {{ $portName }}
+      protocol: TCP
+      name: metrics
+    {{- end }}
+  selector:
+    {{- include "aedis.selectorLabels" . | nindent 4 }}
+{{- end }}

@@ -1,0 +1,167 @@
+{{- $name := include "aedis.name" . }}
+{{- $ns := include "aedis.namespace" . }}
+{{- $targetKind := ternary "Rollout" "Deployment" (eq (include "aedis.isCanary" .) "true") }}
+{{- $targetApi := ternary "argoproj.io/v1alpha1" "apps/v1" (eq (include "aedis.isCanary" .) "true") }}
+{{- if and (ne .Values.type "cronjob") .Values.autoscaling.hpa.enabled }}
+{{- $h := .Values.autoscaling.hpa }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- include "aedis.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: {{ $targetApi }}
+    kind: {{ $targetKind }}
+    name: {{ $name }}
+  {{- $hmin := include "aedis.hpaMinReplicas" . | int }}
+  minReplicas: {{ $hmin }}
+  maxReplicas: {{ max (int $h.maxReplicas) $hmin }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $h.cpuUtilization }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+{{- end }}
+{{- if and (ne .Values.type "cronjob") .Values.autoscaling.keda.enabled }}
+{{- $k := .Values.autoscaling.keda }}
+{{- $labels := include "aedis.labels" . }}
+{{- $bh := include "aedis.kedaBusinessHours" . }}
+{{- $kmin := include "aedis.kedaMinReplicas" . | int }}
+{{- $cloud := .Values.cloud.provider }}
+{{- $needsCloudAuth := false }}
+{{- range $k.queues }}
+{{- if has .kind (list "sqs" "azure-servicebus" "azure-queue") }}{{ $needsCloudAuth = true }}{{ end }}
+{{- end }}
+{{- if $needsCloudAuth }}
+{{- if not (has $cloud (list "aws" "azure")) }}{{ fail "autoscaling.keda.queues com sqs/azure-* exige cloud.provider aws ou azure (identidade de pod)" }}{{ end }}
+{{- if not .Values.identity.enabled }}{{ fail "autoscaling.keda.queues com sqs/azure-* exige identity.enabled (o KEDA usa a identidade do pod)" }}{{ end }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ $name }}-cloud-trigger-auth
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  podIdentity:
+    {{- if eq $cloud "aws" }}
+    provider: aws
+    {{- else }}
+    provider: azure-workload
+    identityId: {{ .Values.identity.azure.clientId }}
+    {{- end }}
+{{- end }}
+{{- range $authName, $authSpec := $k.authentications }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata:
+  name: {{ $name }}-{{ $authName }}-trigger-auth
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  {{- toYaml $authSpec | nindent 2 }}
+{{- end }}
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ $name }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: {{ $targetApi }}
+    kind: {{ $targetKind }}
+    name: {{ $name }}
+  minReplicaCount: {{ $kmin }}
+  maxReplicaCount: {{ max (int $k.maxReplicas) $kmin }}
+  pollingInterval: {{ $k.pollingInterval }}
+  {{- if not (kindIs "invalid" $k.cooldownPeriod) }}
+  cooldownPeriod: {{ $k.cooldownPeriod }}
+  {{- end }}
+  {{- with $k.advanced }}
+  advanced:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  triggers:
+  {{- if $bh }}
+    - type: cron
+      name: business-hours
+      metadata:
+        timezone: {{ $k.businessHours.timezone | quote }}
+        start: {{ $k.businessHours.start | quote }}
+        end: {{ $k.businessHours.end | quote }}
+        desiredReplicas: {{ max 1 (int $k.minReplicas) | toString | quote }}
+  {{- end }}
+  {{- range $k.queues }}
+  {{- if eq .kind "sqs" }}
+    - type: aws-sqs-queue
+      metadata:
+        {{- if .queueUrl }}
+        queueURL: {{ .queueUrl }}
+        {{- else }}
+        queueURLFromEnv: {{ required "queues[sqs]: queueUrl ou queueUrlFromEnv" .queueUrlFromEnv }}
+        {{- end }}
+        awsRegion: {{ .region | default $.Values.cloud.region | required "queues[sqs]: region (ou cloud.region) é obrigatório" }}
+        queueLength: {{ .queueLength | default "10" | quote }}
+        identityOwner: pod
+      authenticationRef:
+        name: {{ $name }}-cloud-trigger-auth
+  {{- else if eq .kind "azure-servicebus" }}
+    - type: azure-servicebus
+      metadata:
+        {{- if .queueName }}
+        queueName: {{ .queueName }}
+        {{- else }}
+        topicName: {{ required "queues[azure-servicebus]: queueName ou topicName" .topicName }}
+        subscriptionName: {{ required "queues[azure-servicebus]: subscriptionName com topicName" .subscriptionName }}
+        {{- end }}
+        {{- if .namespace }}
+        namespace: {{ .namespace }}
+        {{- else }}
+        namespaceFromEnv: {{ required "queues[azure-servicebus]: namespace ou namespaceFromEnv" .namespaceFromEnv }}
+        {{- end }}
+        messageCount: {{ .messageCount | default "10" | quote }}
+      authenticationRef:
+        name: {{ $name }}-cloud-trigger-auth
+  {{- else if eq .kind "azure-queue" }}
+    - type: azure-queue
+      metadata:
+        queueName: {{ required "queues[azure-queue]: queueName" .queueName }}
+        accountName: {{ required "queues[azure-queue]: accountName" .accountName }}
+        queueLength: {{ .queueLength | default "10" | quote }}
+      authenticationRef:
+        name: {{ $name }}-cloud-trigger-auth
+  {{- else if eq .kind "rabbitmq" }}
+    - type: rabbitmq
+      metadata:
+        queueName: {{ required "queues[rabbitmq]: queueName" .queueName }}
+        hostFromEnv: {{ required "queues[rabbitmq]: hostFromEnv (variável do Secret com a URL amqp://)" .hostFromEnv }}
+        mode: QueueLength
+        value: {{ .value | default "10" | quote }}
+        {{- with .vhostName }}
+        vhostName: {{ . }}
+        {{- end }}
+  {{- else }}
+    {{- fail (printf "autoscaling.keda.queues[].kind '%s' desconhecido (sqs | azure-servicebus | azure-queue | rabbitmq)" .kind) }}
+  {{- end }}
+  {{- end }}
+  {{- with $k.triggers }}
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if and (not $bh) (not $k.queues) (not $k.triggers) }}
+    {{- fail "autoscaling.keda.enabled sem queues, triggers nem businessHours: nada para escalar" }}
+  {{- end }}
+{{- end }}

@@ -1,0 +1,9 @@
+environment: dev
+image:
+  tag: 0.1.0-rc.1
+rollout:
+  steps:
+    - setWeight: 50
+    - pause: { duration: 1m }
+sync:
+  automated: true

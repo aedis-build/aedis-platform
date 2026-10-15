@@ -1,0 +1,58 @@
+suite: identidade de workload
+templates:
+  - serviceaccount.yaml
+  - rollout.yaml
+tests:
+  - it: AWS monta o ARN da role a partir de accountId e name
+    template: serviceaccount.yaml
+    values:
+      - ../ci/api-aws-alb-datadog.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["eks.amazonaws.com/role-arn"]
+          value: arn:aws:iam::123456789012:role/payments-api
+      - equal:
+          path: automountServiceAccountToken
+          value: false
+
+  - it: AWS aceita roleArn explícito
+    template: serviceaccount.yaml
+    values:
+      - ../ci/api-aws-alb-datadog.yaml
+    set:
+      identity.aws.roleArn: arn:aws:iam::123456789012:role/custom
+    asserts:
+      - equal:
+          path: metadata.annotations["eks.amazonaws.com/role-arn"]
+          value: arn:aws:iam::123456789012:role/custom
+
+  - it: Azure anota client-id/tenant-id e marca o pod para o webhook
+    values:
+      - ../ci/worker-azure-keda.yaml
+    asserts:
+      - equal:
+          path: metadata.annotations["azure.workload.identity/client-id"]
+          value: 11111111-2222-3333-4444-555555555555
+        template: serviceaccount.yaml
+      - equal:
+          path: spec.template.metadata.labels["azure.workload.identity/use"]
+          value: "true"
+        template: rollout.yaml
+
+  - it: identidade ligada em nuvem genérica falha
+    template: serviceaccount.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      identity.enabled: true
+    asserts:
+      - failedTemplate:
+          errorPattern: "identity.enabled não tem efeito"
+
+  - it: sem identidade a ServiceAccount é limpa
+    template: serviceaccount.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - isNull:
+          path: metadata.annotations

@@ -1,0 +1,25 @@
+apiVersion: v2
+name: aedis-app
+description: >-
+  Chart do Aedis Platform para aplicações api, worker e cronjob: baseline de segurança sempre ligado,
+  Argo Rollouts canário com análise, ExternalSecret (AWS Secrets Manager, Azure Key Vault, Vault),
+  identidade de workload (IRSA, Azure Workload Identity), KEDA/HPA, ServiceMonitor, PDB, NetworkPolicy
+  anti-SSRF e presets opcionais de ingress (nginx, ALB, AGIC, Kong) e de observabilidade.
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+keywords:
+  - aedis
+  - gitops
+  - argo-rollouts
+  - external-secrets
+  - keda
+  - security
+home: https://github.com/aedis-build/aedis-platform
+sources:
+  - https://github.com/aedis-build/aedis-platform
+maintainers:
+  - name: Aedis
+    url: https://github.com/aedis-build
+annotations:
+  artifacthub.io/license: Apache-2.0

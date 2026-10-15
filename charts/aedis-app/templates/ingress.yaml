@@ -1,0 +1,45 @@
+{{- $ing := .Values.ingress }}
+{{- if and $ing.enabled (eq .Values.type "api") (ne $ing.preset "kong") }}
+{{- $name := include "aedis.name" . }}
+{{- if not $ing.hosts }}{{ fail "ingress.enabled exige ingress.hosts" }}{{ end }}
+{{- $preset := include "aedis.ingress.preset" . | fromYaml }}
+{{- $ann := deepCopy ($preset.annotations | default dict) }}
+{{- range $k, $v := $ing.annotations }}{{- $_ := set $ann $k (toString $v) }}{{- end }}
+{{- $class := $ing.className | default $preset.className }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "aedis.namespace" . }}
+  labels:
+    {{- include "aedis.labels" . | nindent 4 }}
+  {{- with $ann }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $class }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- if and $ing.tls.enabled $ing.tls.secretName }}
+  tls:
+    - hosts:
+        {{- toYaml $ing.hosts | nindent 8 }}
+      secretName: {{ $ing.tls.secretName }}
+  {{- end }}
+  rules:
+    {{- range $ing.hosts }}
+    - host: {{ . }}
+      http:
+        paths:
+          {{- range $ing.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  name: http
+          {{- end }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,43 @@
+# API na AWS: IRSA, Secrets Manager via ESO, ALB, Datadog como vendor e provider da análise.
+name: payments-api
+namespace: fin
+type: api
+environment: prod
+environmentClass: prod
+cloud:
+  provider: aws
+  region: us-east-1
+image:
+  repository: 123456789012.dkr.ecr.us-east-1.amazonaws.com/payments-api
+  tag: 2.0.0
+  digest: sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+identity:
+  enabled: true
+  aws:
+    accountId: "123456789012"
+secrets:
+  prefix: prod
+  dataFrom:
+    - key: payments-api
+  keys:
+    - name: Signing__AwsKms__KeyId
+      key: payments-api/signing
+      property: KeyId
+ingress:
+  enabled: true
+  preset: alb
+  hosts: [payments.example.com]
+  proxyNetworks: [10.64.0.0/16]
+  edge:
+    waf: true
+  alb:
+    scheme: internet-facing
+    groupName: prod-public
+rollout:
+  analysis:
+    provider: datadog
+observability:
+  vendor:
+    name: datadog
+    options:
+      env: production

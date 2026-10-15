@@ -1,0 +1,11 @@
+# Donos por caminho. Mudanças no chart, nas políticas, nos workflows e nos níveis de conformidade
+# exigem revisão do time de plataforma/segurança.
+*                     @aedis-build/maintainers
+/charts/              @aedis-build/platform-security
+/policies/            @aedis-build/platform-security
+/semgrep/             @aedis-build/platform-security
+/conformance/         @aedis-build/platform-security
+/.github/             @aedis-build/platform-security
+/scripts/             @aedis-build/platform-security
+/CODEOWNERS           @aedis-build/platform-security
+/SECURITY.md          @aedis-build/platform-security

@@ -1,0 +1,117 @@
+# Níveis de conformidade do Aedis Platform. Lido por `aedis platform validate --level N` e pelo portal.
+# Um tenant pode copiar este arquivo para conformance/levels.yaml no repo GitOps e SUBIR limiares; nunca baixar.
+# Cada controle tem: id, descrição, como é verificado (source) e o que o checker consegue avaliar localmente.
+schema: aedis.platform/conformance-levels/v1
+levels:
+  - id: 1
+    name: Baseline
+    scorecard:
+      minScore: 0
+      checks:
+        Token-Permissions: 1
+        Dangerous-Workflow: 1
+        Binary-Artifacts: 1
+    bestPractices: passing
+    coverage:
+      minLine: 60
+      minBranch: 0
+      noRegression: false
+    controls:
+      - id: PLT-01
+        title: Baseline de pod (non-root, read-only, sem capabilities, seccomp)
+        source: chart
+        check: chart-baseline
+      - id: PLT-02
+        title: Segredos fora do git (ExternalSecret)
+        source: chart
+        check: secrets-via-eso
+      - id: PLT-05
+        title: Manifestos validados (schema, kubeconform, Trivy config)
+        source: validate-summary
+        check: validate-pass
+      - id: PLT-17
+        title: Probes de liveness/readiness/startup
+        source: chart
+        check: probes-enabled
+      - id: PLT-18
+        title: PDB para APIs com 2+ réplicas
+        source: chart
+        check: pdb-present
+  - id: 2
+    name: Hardened
+    scorecard:
+      minScore: 7
+      checks:
+        Branch-Protection: 8
+        Code-Review: 8
+        Pinned-Dependencies: 8
+        SAST: 8
+        Vulnerabilities: 8
+    bestPractices: silver
+    coverage:
+      minLine: 75
+      minBranch: 60
+      noRegression: true
+    controls:
+      - id: PLT-06
+        title: Imagem assinada (cosign) e verificada no admission
+        source: build-image-summary
+        check: image-signed
+      - id: PLT-07
+        title: SBOM e proveniência anexados
+        source: build-image-summary
+        check: sbom-attached
+      - id: PLT-08
+        title: Produção referencia imagem por digest
+        source: chart
+        check: prod-digest
+      - id: PLT-09
+        title: Kyverno em enforce e PSA restricted
+        source: cluster
+        check: admission-enforced
+      - id: PLT-04
+        title: NetworkPolicy de egresso (anti-SSRF) nos ambientes de produção
+        source: chart
+        check: egress-policy-prod
+      - id: PLT-13
+        title: Gate SAST
+        source: sast-summary
+        check: sast-pass
+  - id: 3
+    name: Regulated
+    scorecard:
+      minScore: 8
+      checks:
+        Signed-Releases: 9
+        Dependency-Update-Tool: 9
+        Security-Policy: 9
+    bestPractices: gold
+    coverage:
+      minLine: 85
+      minBranch: 70
+      noRegression: true
+    controls:
+      - id: PLT-14
+        title: Gate DAST na superfície exposta
+        source: dast-summary
+        check: dast-pass
+      - id: PLT-19
+        title: Attestation (SBOM/proveniência) verificada no admission
+        source: cluster
+        check: attestation-enforced
+      - id: PLT-10
+        title: Produção só por PR com revisão (CODEOWNERS + ruleset)
+        source: repo
+        check: prod-by-pr
+      - id: PLT-16
+        title: Relatório de drift em produção
+        source: drift-summary
+        check: drift-report
+      - id: PLT-20
+        title: WAF declarado em toda API exposta em produção
+        source: chart
+        check: waf-declared-prod
+      - id: PLT-21
+        title: Evidências retidas (sumários versionados)
+        source: repo
+        check: evidence-retained

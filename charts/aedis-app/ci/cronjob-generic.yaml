@@ -1,0 +1,15 @@
+# CronJob genérico com hook de limpeza de legado.
+name: reconcile-job
+namespace: fin
+type: cronjob
+environment: dev
+environmentClass: nonprod
+image:
+  repository: ghcr.io/example/reconcile-job
+  tag: 0.1.0
+cronjob:
+  schedule: "*/15 * * * *"
+  timeZone: America/Sao_Paulo
+hooks:
+  cleanup:
+    deployments: [reconcile-job-old]

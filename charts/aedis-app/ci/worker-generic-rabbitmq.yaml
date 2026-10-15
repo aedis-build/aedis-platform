@@ -1,0 +1,30 @@
+# Worker genérico (DigitalOcean ou on-prem): RabbitMQ no KEDA, Vault, sem identidade de pod, Deployment sem canário.
+name: mailer-worker
+namespace: comms
+type: worker
+environment: prod
+environmentClass: prod
+cloud:
+  provider: digitalocean
+image:
+  repository: registry.digitalocean.com/example/mailer-worker
+  tag: 3.2.1
+  digest: sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+secrets:
+  prefix: apps/prod
+  keys:
+    - name: RABBITMQ_HOST
+      key: mailer
+      property: AmqpUrl
+rollout:
+  strategy: rolling
+autoscaling:
+  keda:
+    enabled: true
+    minReplicas: 1
+    maxReplicas: 5
+    queues:
+      - kind: rabbitmq
+        queueName: mail
+        hostFromEnv: RABBITMQ_HOST
+        value: "50"

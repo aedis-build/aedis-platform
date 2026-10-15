@@ -1,0 +1,201 @@
+{{- /*
+Hooks do ArgoCD. hooks.jobs: Jobs genéricos (PreSync/Sync/PostSync) com o mesmo baseline de segurança
+do app. hooks.cleanup: remoção de objetos legados (migração de outro deploy) por um Job PostSync com
+Role mínima; idempotente, roda a cada sync enquanto o bloco existir.
+*/ -}}
+{{- $name := include "aedis.name" . }}
+{{- $ns := include "aedis.namespace" . }}
+{{- $labels := include "aedis.labels" . }}
+{{- range .Values.hooks.jobs }}
+{{- $job := . }}
+{{- $jobName := printf "%s-%s" $name (required "hooks.jobs[].name é obrigatório" $job.name) }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $jobName }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: {{ $job.phase | default "PostSync" }}
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: {{ $job.backoffLimit | default 2 }}
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        {{- include "aedis.selectorLabels" $ | nindent 8 }}
+        aedis.build/hook: {{ $job.name }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ $job.serviceAccountName | default (include "aedis.serviceAccountName" $) }}
+      automountServiceAccountToken: {{ $job.automountToken | default false }}
+      securityContext:
+        {{- include "aedis.podSecurityContext" $ | nindent 8 }}
+      {{- with $.Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- range . }}
+        - name: {{ . }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: hook
+          image: {{ $job.image | default (include "aedis.image" $) }}
+          {{- with $job.command }}
+          command:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with $job.args }}
+          args:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            {{- include "aedis.env" $ | nindent 12 }}
+            {{- with $job.env }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- if or $.Values.secrets.keys $.Values.secrets.dataFrom }}
+          envFrom:
+            - secretRef:
+                name: {{ $name }}-secret
+          {{- end }}
+          securityContext:
+            {{- include "aedis.containerSecurityContext" $ | nindent 12 }}
+          resources:
+            {{- toYaml ($job.resources | default $.Values.resources) | nindent 12 }}
+          volumeMounts:
+            {{- include "aedis.volumeMounts" $ | nindent 12 }}
+      volumes:
+        {{- include "aedis.volumes" $ | nindent 8 }}
+{{- end }}
+{{- $c := .Values.hooks.cleanup }}
+{{- $kinds := dict "deployments" "apps" "horizontalpodautoscalers" "autoscaling" "verticalpodautoscalers" "autoscaling.k8s.io" "scaledobjects" "keda.sh" "triggerauthentications" "keda.sh" "servicemonitors" "monitoring.coreos.com" "externalsecrets" "external-secrets.io" }}
+{{- $targets := list }}
+{{- range $kind, $names := $c }}
+{{- if not (hasKey $kinds $kind) }}
+{{- fail (printf "hooks.cleanup.%s: kind não suportado (use %s)" $kind (keys $kinds | sortAlpha | join ", ")) }}
+{{- end }}
+{{- range $names }}
+{{- $targets = append $targets (printf "%s.%s/%s" $kind (get $kinds $kind) .) }}
+{{- end }}
+{{- end }}
+{{- if $targets }}
+{{- $cleanup := printf "%s-cleanup" $name }}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $cleanup }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $cleanup }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
+rules:
+  {{- range $kind, $names := $c }}
+  {{- if $names }}
+  - apiGroups: [{{ get $kinds $kind | quote }}]
+    resources: [{{ $kind }}]
+    resourceNames:
+      {{- toYaml $names | nindent 6 }}
+    verbs: [get, delete]
+  {{- end }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $cleanup }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "-1"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $cleanup }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ $cleanup }}
+    namespace: {{ $ns }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $cleanup }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+spec:
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $cleanup }}
+        app.kubernetes.io/part-of: aedis
+    spec:
+      serviceAccountName: {{ $cleanup }}
+      automountServiceAccountToken: true
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: kubectl
+          image: {{ .Values.hooks.image }}
+          args:
+            - delete
+            - --namespace={{ $ns }}
+            - --ignore-not-found
+            - --wait=false
+            {{- range $targets }}
+            - {{ . }}
+            {{- end }}
+          env:
+            - name: HOME
+              value: /tmp
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { memory: 128Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+{{- end }}

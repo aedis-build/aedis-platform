@@ -1,0 +1,111 @@
+{{- /*
+Preset kong: uma Ingress por rota, com os métodos dela (konghq.com/methods). Só sai o que está
+listado em ingress.routes. Balanceamento e healthcheck num KongUpstreamPolicy ligado ao Service.
+*/ -}}
+{{- $ing := .Values.ingress }}
+{{- if and $ing.enabled (eq .Values.type "api") (eq $ing.preset "kong") }}
+{{- $name := include "aedis.name" . }}
+{{- $ns := include "aedis.namespace" . }}
+{{- $k := $ing.kong }}
+{{- $labels := include "aedis.labels" . }}
+{{- $port := .Values.container.port }}
+{{- if not $ing.routes }}{{ fail "ingress.preset kong exige ingress.routes" }}{{ end }}
+{{- if not $ing.hosts }}{{ fail "ingress.preset kong exige ingress.hosts" }}{{ end }}
+{{- $class := $ing.className | default "kong" }}
+apiVersion: configuration.konghq.com/v1beta1
+kind: KongUpstreamPolicy
+metadata:
+  name: {{ $name }}-upstream
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+spec:
+  algorithm: {{ $k.upstream.algorithm }}
+  {{- with $k.upstream.hashOn }}
+  hashOn:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- if $k.upstream.healthchecks }}
+  healthchecks:
+    {{- toYaml $k.upstream.healthchecks | nindent 4 }}
+  {{- else }}
+  healthchecks:
+    active:
+      type: http
+      httpPath: {{ .Values.probes.readiness.path }}
+      timeout: 5
+      healthy:
+        successes: 2
+        interval: 5
+        httpStatuses: [200]
+      unhealthy:
+        httpFailures: 3
+        interval: 2
+        httpStatuses: [500, 502, 503, 504]
+    passive:
+      type: http
+      healthy:
+        successes: 2
+        httpStatuses: [200, 201, 204]
+      unhealthy:
+        httpFailures: 3
+        httpStatuses: [500, 502, 503, 504]
+  {{- end }}
+{{- range $pname, $p := $k.plugins }}
+---
+apiVersion: configuration.konghq.com/v1
+kind: KongPlugin
+metadata:
+  name: {{ $name }}-{{ $pname }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+plugin: {{ required (printf "ingress.kong.plugins.%s.plugin é obrigatório" $pname) $p.plugin }}
+{{- with $p.config }}
+config:
+  {{- toYaml . | nindent 2 }}
+{{- end }}
+{{- end }}
+{{- range $r := $ing.routes }}
+{{- $slug := trimAll "-" (regexReplaceAll "[^a-z0-9]+" (lower $r.path) "-") }}
+{{- $plugins := list }}
+{{- range (concat ($k.defaultPlugins | default list) ($r.plugins | default list)) }}
+{{- if not (hasKey $k.plugins .) }}{{ fail (printf "ingress.kong: plugin %s não declarado em ingress.kong.plugins" .) }}{{ end }}
+{{- $plugins = append $plugins (printf "%s-%s" $name .) }}
+{{- end }}
+{{- $ann := dict "konghq.com/strip-path" (toString $k.stripPath) "konghq.com/methods" (required (printf "ingress.routes %s: methods é obrigatório" $r.path) $r.methods | join ", ") }}
+{{- if $plugins }}{{- $_ := set $ann "konghq.com/plugins" ($plugins | uniq | join ",") }}{{- end }}
+{{- range $ak, $av := $ing.annotations }}{{- $_ := set $ann $ak (toString $av) }}{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ printf "%s-%s" $name $slug | trunc 63 | trimSuffix "-" }}
+  namespace: {{ $ns }}
+  labels:
+    {{- $labels | nindent 4 }}
+  annotations:
+    {{- toYaml $ann | nindent 4 }}
+spec:
+  ingressClassName: {{ $class }}
+  {{- if and $ing.tls.enabled $ing.tls.secretName }}
+  tls:
+    - hosts:
+        {{- toYaml $ing.hosts | nindent 8 }}
+      secretName: {{ $ing.tls.secretName }}
+  {{- end }}
+  rules:
+    {{- range $ing.hosts }}
+    - host: {{ . }}
+      http:
+        paths:
+          - path: {{ $r.path }}
+            pathType: {{ $r.pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $name }}
+                port:
+                  number: {{ $port }}
+    {{- end }}
+{{- end }}
+{{- end }}

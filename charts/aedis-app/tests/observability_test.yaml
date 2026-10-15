@@ -1,0 +1,75 @@
+suite: observabilidade e presets de fornecedor
+templates:
+  - rollout.yaml
+  - servicemonitor.yaml
+tests:
+  - it: sem vendor não há nada de fornecedor no pod
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - isNull:
+          path: spec.template.metadata.labels["tags.datadoghq.com/service"]
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DD_AGENT_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+
+  - it: Datadog adiciona unified service tagging e DD_* por cima do OTLP
+    template: rollout.yaml
+    values:
+      - ../ci/api-aws-alb-datadog.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.labels["tags.datadoghq.com/env"]
+          value: production
+      - equal:
+          path: spec.template.metadata.labels["tags.datadoghq.com/version"]
+          value: 2.0.0
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DD_AGENT_HOST
+            valueFrom:
+              fieldRef:
+                fieldPath: status.hostIP
+      - contains:
+          path: spec.strategy.canary.analysis.args
+          content:
+            name: env
+            value: production
+
+  - it: Dynatrace anota o pod para o OneAgent
+    template: rollout.yaml
+    values:
+      - ../ci/api-kong.yaml
+    asserts:
+      - equal:
+          path: spec.template.metadata.annotations["oneagent.dynatrace.com/inject"]
+          value: "true"
+
+  - it: análise desligada não entra no Rollout
+    template: rollout.yaml
+    values:
+      - ../ci/api-kong.yaml
+    asserts:
+      - isNull:
+          path: spec.strategy.canary.analysis
+
+  - it: ServiceMonitor usa o seletor do app e a porta metrics
+    template: servicemonitor.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      observability.metrics.serviceMonitor.labels:
+        release: prometheus
+    asserts:
+      - equal:
+          path: metadata.labels.release
+          value: prometheus
+      - equal:
+          path: spec.endpoints[0].port
+          value: metrics

@@ -1,0 +1,113 @@
+suite: variáveis de ambiente derivadas para o host Aedis
+templates:
+  - rollout.yaml
+tests:
+  - it: nonprod vira Staging, proxies fixados, hosts permitidos e OTLP ligado
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ASPNETCORE_ENVIRONMENT
+            value: Staging
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Security__ForwardedHeaders__TrustAllProxies
+            value: "false"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Security__ForwardedHeaders__KnownNetworks__0
+            value: 10.0.0.0/8
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Security__HostHeaders__AllowedHosts__4
+            value: orders.dev.example.com
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Security__Https__EnableHsts
+            value: "false"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Telemetry__OtlpEndpoint
+            value: http://otel-collector.observability:4317
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: OTEL_SERVICE_NAME
+            value: orders-api
+
+  - it: prod vira Production com HSTS ligado
+    values:
+      - ../ci/api-aws-alb-datadog.yaml
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ASPNETCORE_ENVIRONMENT
+            value: Production
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Security__Https__EnableHsts
+            value: "true"
+
+  - it: worker não recebe configuração HTTP
+    values:
+      - ../ci/worker-azure-keda.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Security__ForwardedHeaders__TrustAllProxies
+            value: "false"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: DOTNET_ENVIRONMENT
+            value: Staging
+
+  - it: framework.enabled=false não deriva nada do Aedis
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      framework.enabled: false
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ASPNETCORE_ENVIRONMENT
+            value: Staging
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: POD_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+
+  - it: framework.env e container.env são mesclados por último
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      framework.env:
+        Logging__Redaction__Enabled: "true"
+      container.env:
+        - name: FEATURE_X
+          value: "on"
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: Logging__Redaction__Enabled
+            value: "true"
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: FEATURE_X
+            value: "on"

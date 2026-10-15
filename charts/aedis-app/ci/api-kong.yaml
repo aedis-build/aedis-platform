@@ -1,0 +1,32 @@
+# API exposta pelo Kong: uma Ingress por rota, plugin de rate limit, Dynatrace como vendor.
+name: catalog-api
+namespace: shop
+type: api
+environment: dev
+environmentClass: nonprod
+image:
+  repository: ghcr.io/example/catalog-api
+  tag: 1.0.0
+ingress:
+  enabled: true
+  preset: kong
+  hosts: [api.dev.example.com]
+  edge:
+    waf: true
+  routes:
+    - path: /v1/catalog/products
+      methods: [GET, QUERY]
+      plugins: [rate-limit]
+    - path: /v1/catalog/products/import
+      methods: [POST]
+  kong:
+    plugins:
+      rate-limit:
+        plugin: rate-limiting
+        config: { minute: 600, policy: local }
+observability:
+  vendor:
+    name: dynatrace
+rollout:
+  analysis:
+    provider: none

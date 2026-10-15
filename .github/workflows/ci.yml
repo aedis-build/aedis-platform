@@ -1,0 +1,88 @@
+# CI deste repositório: chart (lint, unittest, render dos exemplos, kubeconform, Trivy config), scripts e
+# o template do tenant validado com o próprio chart.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+jobs:
+  chart:
+    name: Chart aedis-app
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Instalar helm, helm-unittest e kubeconform
+        run: |
+          set -euo pipefail
+          HELM_VERSION=v3.18.4
+          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          helm plugin install https://github.com/helm-unittest/helm-unittest.git --version 1.0.3
+          KUBECONFORM_VERSION=v0.6.7
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin kubeconform
+
+      - name: helm lint (cada values de exemplo)
+        run: |
+          set -euo pipefail
+          for f in charts/aedis-app/ci/*.yaml; do helm lint charts/aedis-app -f "$f"; done
+
+      - name: helm unittest
+        run: helm unittest charts/aedis-app
+
+      - name: Render dos exemplos + kubeconform
+        run: |
+          set -euo pipefail
+          mkdir -p rendered
+          for f in charts/aedis-app/ci/*.yaml; do
+            n="$(basename "$f" .yaml)"
+            helm template "$n" charts/aedis-app -f "$f" > "rendered/$n.yaml"
+          done
+          kubeconform -strict -summary -kubernetes-version 1.31.0 \
+            -schema-location default \
+            -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json' \
+            rendered/*.yaml
+
+      - name: Trivy config
+        run: |
+          set -euo pipefail
+          VER=0.65.0
+          curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/v${VER}/contrib/install.sh" | sh -s -- -b /usr/local/bin "v${VER}"
+          trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 rendered
+
+      - name: Vazamento de fornecedor
+        run: |
+          set -euo pipefail
+          pattern="$(printf '%s|%s' 'pay''hop' 'nuc''lea')"
+          if grep -rniE "$pattern" --exclude-dir=.git --exclude-dir=bin --exclude-dir=obj . ; then echo "referência a fornecedor encontrada"; exit 1; fi
+
+  tenant-template:
+    name: Template do tenant valida com o chart
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Instalar helm
+        run: |
+          set -euo pipefail
+          HELM_VERSION=v3.18.4
+          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+      - name: Instanciar o template e validar
+        run: |
+          set -euo pipefail
+          bash scripts/render-tenant-template.sh --cloud generic --org example --out /tmp/tenant
+          cp -r examples/tenant/apps/* /tmp/tenant/apps/
+          bash scripts/validate-apps.sh --chart "$PWD/charts/aedis-app" --repo /tmp/tenant --out /tmp/tenant-rendered

@@ -1,0 +1,73 @@
+# ApplicationSet dos workloads deste repo: um Application por apps/<app>/env/<env>.yaml.
+# Chart: __AEDIS_CHART__ (versão __AEDIS_CHART_VERSION__). Values em três camadas (platform -> app -> env).
+# Instale no ArgoCD central (namespace argocd); os clusters de destino são registrados com a label
+# aedis.build/environment=<env>.
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: aedis-apps
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - matrix:
+        generators:
+          - git:
+              repoURL: https://github.com/__AEDIS_ORG__/gitops-apps.git
+              revision: main
+              files:
+                - path: "apps/*/env/*.yaml"
+          - clusters:
+              selector:
+                matchLabels:
+                  aedis.build/environment: "{{ .path.filename | trimSuffix \".yaml\" }}"
+  template:
+    metadata:
+      name: "{{ index .path.segments 1 }}-{{ .path.filename | trimSuffix \".yaml\" }}"
+      labels:
+        aedis.build/app: "{{ index .path.segments 1 }}"
+        aedis.build/environment: "{{ .path.filename | trimSuffix \".yaml\" }}"
+      annotations:
+        # argocd-image-updater: só em não-prod (prod muda por PR). Ajuste o filtro de tags à sua convenção.
+        argocd-image-updater.argoproj.io/write-back-method: git
+        argocd-image-updater.argoproj.io/git-branch: main
+        argocd-image-updater.argoproj.io/write-back-target: "helmvalues:/apps/{{ index .path.segments 1 }}/env/{{ .path.filename }}"
+    spec:
+      project: aedis-apps
+      sources:
+        - repoURL: __AEDIS_CHART__
+          chart: aedis-app
+          targetRevision: __AEDIS_CHART_VERSION__
+          helm:
+            releaseName: "{{ index .path.segments 1 }}"
+            valueFiles:
+              - "$values/platform/values/{{ .path.filename }}"
+              - "$values/apps/{{ index .path.segments 1 }}/app.yaml"
+              - "$values/apps/{{ index .path.segments 1 }}/env/{{ .path.filename }}"
+        - repoURL: https://github.com/__AEDIS_ORG__/gitops-apps.git
+          targetRevision: main
+          ref: values
+      destination:
+        name: "{{ .name }}"
+        namespace: "{{ .namespace }}"
+      syncPolicy:
+        syncOptions:
+          - CreateNamespace=false
+          - ServerSideApply=true
+          - PrunePropagationPolicy=foreground
+        retry:
+          limit: 3
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 5m
+  templatePatch: |
+    {{- if and (hasKey . "sync") (hasKey .sync "automated") .sync.automated }}
+    spec:
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: {{ ne .environmentClass "prod" }}
+    {{- end }}
+  preserveResourcesOnDeletion: true

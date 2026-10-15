@@ -1,0 +1,53 @@
+# App de exemplo do e2e: a imagem agnhost (registry.k8s.io, usada pelos testes do próprio Kubernetes) serve HTTP
+# em 8080 com /healthz, roda como qualquer uid e com root filesystem read-only — exercita o chart inteiro sem
+# depender de uma imagem Aedis publicada. framework.enabled fica ligado para validar as env derivadas.
+name: orders-api
+namespace: shop
+type: api
+environment: dev
+environmentClass: nonprod
+cloud:
+  provider: generic
+image:
+  repository: registry.k8s.io/e2e-test-images/agnhost
+  # agnhost 2.47 (a tag não é semver, então a imagem é pinada por digest)
+  digest: sha256:cc249acbd34692826b2b335335615e060fdb3c0bca4954507aa3a1d1194de253
+container:
+  args: [netexec, --http-port=8080]
+probes:
+  liveness: { path: /healthz, initialDelaySeconds: 2, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3 }
+  readiness: { path: /healthz, initialDelaySeconds: 2, periodSeconds: 5, timeoutSeconds: 3, failureThreshold: 3 }
+  startup: { path: /healthz, initialDelaySeconds: 1, periodSeconds: 2, timeoutSeconds: 3, failureThreshold: 30 }
+resources:
+  requests: { cpu: 10m, memory: 32Mi }
+  limits: { cpu: 200m, memory: 128Mi }
+availability:
+  topologySpread:
+    enabled: false
+secrets:
+  prefix: apps/dev
+  keys:
+    - name: Database__ConnectionString
+      key: orders-api
+      property: ConnectionString
+    - name: Auth__ClientSecret
+      key: orders-api
+      property: AuthClientSecret
+ingress:
+  enabled: false
+observability:
+  metrics:
+    serviceMonitor:
+      enabled: true
+  otlp:
+    endpoint: http://otel-collector.observability:4317
+rollout:
+  steps:
+    - setWeight: 50
+    - pause: { duration: 5s }
+  analysis:
+    enabled: false
+networkPolicy:
+  egress:
+    enabled: true
+    allowedCidrs: [10.0.0.0/8]

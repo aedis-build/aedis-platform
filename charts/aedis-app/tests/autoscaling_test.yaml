@@ -1,0 +1,98 @@
+suite: HPA e KEDA
+templates:
+  - autoscaling.yaml
+tests:
+  - it: KEDA no Azure usa identidade de workload e horário de funcionamento vai a zero
+    values:
+      - ../ci/worker-azure-keda.yaml
+    asserts:
+      - hasDocuments:
+          count: 2
+      - isKind:
+          of: TriggerAuthentication
+        documentIndex: 0
+      - equal:
+          path: spec.podIdentity.provider
+          value: azure-workload
+        documentIndex: 0
+      - equal:
+          path: spec.podIdentity.identityId
+          value: 11111111-2222-3333-4444-555555555555
+        documentIndex: 0
+      - isKind:
+          of: ScaledObject
+        documentIndex: 1
+      - equal:
+          path: spec.minReplicaCount
+          value: 0
+        documentIndex: 1
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Rollout
+        documentIndex: 1
+      - contains:
+          path: spec.triggers
+          content:
+            type: azure-servicebus
+            metadata:
+              queueName: notifications
+              namespaceFromEnv: ServiceBus__Namespace
+              messageCount: "20"
+            authenticationRef:
+              name: notifications-worker-cloud-trigger-auth
+        documentIndex: 1
+
+  - it: RabbitMQ não precisa de identidade de nuvem e aponta para o Deployment
+    values:
+      - ../ci/worker-generic-rabbitmq.yaml
+    asserts:
+      - hasDocuments:
+          count: 1
+      - isKind:
+          of: ScaledObject
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Deployment
+      - equal:
+          path: spec.triggers[0].type
+          value: rabbitmq
+      - equal:
+          path: spec.triggers[0].metadata.hostFromEnv
+          value: RABBITMQ_HOST
+
+  - it: SQS exige cloud aws com identidade
+    values:
+      - ../ci/worker-generic-rabbitmq.yaml
+    set:
+      autoscaling.keda.queues:
+        - kind: sqs
+          queueUrlFromEnv: SQS_QUEUE_URL
+    asserts:
+      - failedTemplate:
+          errorPattern: "exige cloud.provider aws ou azure"
+
+  - it: KEDA ligado sem gatilho falha
+    values:
+      - ../ci/worker-generic-rabbitmq.yaml
+    set:
+      autoscaling.keda.queues: []
+    asserts:
+      - failedTemplate:
+          errorPattern: "nada para escalar"
+
+  - it: HPA respeita o piso de réplicas da API
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      autoscaling.hpa.enabled: true
+      autoscaling.hpa.minReplicas: 1
+      autoscaling.hpa.maxReplicas: 4
+    asserts:
+      - isKind:
+          of: HorizontalPodAutoscaler
+      - equal:
+          path: spec.minReplicas
+          value: 2
+      - equal:
+          path: spec.scaleTargetRef.kind
+          value: Rollout

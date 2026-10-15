@@ -1,0 +1,20 @@
+# Fixtures do e2e em kind: namespace do app e um ClusterSecretStore "fake" do ESO com os segredos que o
+# exemplo espera. Em produção o store aponta para o cofre real (ver docs/clouds/*).
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: shop
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+---
+apiVersion: external-secrets.io/v1
+kind: ClusterSecretStore
+metadata:
+  name: aedis-secrets
+spec:
+  provider:
+    fake:
+      data:
+        - key: apps/dev/orders-api
+          value: '{"ConnectionString":"Host=db;Database=orders","AuthClientSecret":"s3cr3t"}'

@@ -1,0 +1,61 @@
+{{- if ne .Values.type "cronjob" }}
+{{- $name := include "aedis.name" . }}
+{{- $canary := include "aedis.isCanary" . }}
+{{- if $canary }}
+apiVersion: argoproj.io/v1alpha1
+kind: Rollout
+{{- else }}
+apiVersion: apps/v1
+kind: Deployment
+{{- end }}
+metadata:
+  name: {{ $name }}
+  namespace: {{ include "aedis.namespace" . }}
+  labels:
+    {{- include "aedis.labels" . | nindent 4 }}
+  annotations:
+    reloader.stakater.com/auto: "true"
+spec:
+  {{- if not (include "aedis.autoscaled" .) }}
+  replicas: {{ include "aedis.replicas" . }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.rollout.revisionHistoryLimit }}
+  selector:
+    matchLabels:
+      {{- include "aedis.selectorLabels" . | nindent 6 }}
+  strategy:
+    {{- if $canary }}
+    canary:
+      maxSurge: 1
+      maxUnavailable: 0
+      abortScaleDownDelaySeconds: 30
+      {{- if and .Values.rollout.analysis.enabled (ne .Values.rollout.analysis.provider "none") }}
+      analysis:
+        templates:
+          {{- range (include "aedis.analysisTemplates" . | fromYamlArray) }}
+          - templateName: {{ . }}
+            clusterScope: true
+          {{- end }}
+        startingStep: 1
+        args:
+          {{- include "aedis.analysisArgs" . | nindent 10 }}
+      {{- end }}
+      steps:
+        {{- toYaml .Values.rollout.steps | nindent 8 }}
+    {{- else }}
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    {{- end }}
+  template:
+    metadata:
+      labels:
+        {{- include "aedis.podLabels" . | nindent 8 }}
+      {{- with (include "aedis.vendor.podAnnotations" . | trim) }}
+      annotations:
+        {{- . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- include "aedis.podSpec" . | nindent 6 }}
+{{- end }}

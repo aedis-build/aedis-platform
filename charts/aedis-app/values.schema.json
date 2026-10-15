@@ -1,0 +1,1562 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "aedis-app",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "namespace",
+    "type",
+    "environment",
+    "environmentClass",
+    "image"
+  ],
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "cronjob"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cronjob": {
+            "required": [
+              "schedule"
+            ],
+            "properties": {
+              "schedule": {
+                "minLength": 9
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "ingress": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          },
+          "type": {
+            "const": "api"
+          }
+        },
+        "required": [
+          "ingress"
+        ]
+      },
+      "then": {
+        "properties": {
+          "ingress": {
+            "required": [
+              "hosts",
+              "edge"
+            ],
+            "properties": {
+              "hosts": {
+                "minItems": 1
+              },
+              "edge": {
+                "required": [
+                  "waf"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "identity": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          },
+          "cloud": {
+            "properties": {
+              "provider": {
+                "const": "azure"
+              }
+            }
+          }
+        },
+        "required": [
+          "identity"
+        ]
+      },
+      "then": {
+        "properties": {
+          "identity": {
+            "properties": {
+              "azure": {
+                "required": [
+                  "clientId"
+                ],
+                "properties": {
+                  "clientId": {
+                    "minLength": 36
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "identity": {
+            "properties": {
+              "enabled": {
+                "const": true
+              }
+            }
+          },
+          "cloud": {
+            "properties": {
+              "provider": {
+                "const": "aws"
+              }
+            }
+          }
+        },
+        "required": [
+          "identity"
+        ]
+      },
+      "then": {
+        "properties": {
+          "identity": {
+            "properties": {
+              "aws": {
+                "anyOf": [
+                  {
+                    "properties": {
+                      "roleArn": {
+                        "minLength": 20
+                      }
+                    },
+                    "required": [
+                      "roleArn"
+                    ]
+                  },
+                  {
+                    "properties": {
+                      "accountId": {
+                        "pattern": "^[0-9]{12}$"
+                      }
+                    },
+                    "required": [
+                      "accountId"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "definitions": {
+    "dnsLabel": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 63
+    },
+    "host": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$"
+    },
+    "cidr": {
+      "type": "string",
+      "pattern": "^[0-9]{1,3}(\\.[0-9]{1,3}){3}/[0-9]{1,2}$"
+    },
+    "size": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(Ki|Mi|Gi|Ti|k|M|G|T)?)?$"
+    },
+    "names": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9]([-a-z0-9.]*[a-z0-9])?$"
+      }
+    },
+    "namespaces": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/dnsLabel"
+      }
+    },
+    "stringMap": {
+      "type": "object",
+      "additionalProperties": {
+        "type": [
+          "string",
+          "number",
+          "boolean"
+        ]
+      }
+    },
+    "cron": {
+      "type": "string",
+      "pattern": "^[^ ]+( [^ ]+){4}$"
+    },
+    "secretKey": {
+      "type": "object",
+      "required": [
+        "name",
+        "key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.-]*$",
+          "description": "Nome da variável de ambiente / chave do Secret"
+        },
+        "key": {
+          "type": "string",
+          "pattern": "^[^/].*[^/]$|^[^/]$",
+          "description": "Nome/caminho do segredo no cofre, sem o prefixo"
+        },
+        "property": {
+          "type": "string",
+          "description": "Campo dentro do segredo (obrigatório no Vault; chave JSON na AWS)"
+        },
+        "keyTemplate": {
+          "type": "string"
+        }
+      }
+    },
+    "probe": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^/[A-Za-z0-9._~/-]*$"
+        },
+        "initialDelaySeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "periodSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "timeoutSeconds": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "failureThreshold": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    }
+  },
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]{0,50}[a-z0-9])?$",
+      "description": "Nome do app: Rollout/Deployment/CronJob, Service, ServiceAccount e Secret <name>-secret"
+    },
+    "namespace": {
+      "$ref": "#/definitions/dnsLabel"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "api",
+        "worker",
+        "cronjob"
+      ]
+    },
+    "owner": {
+      "type": "string",
+      "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+    },
+    "catalog": {
+      "type": "object",
+      "description": "Bloco livre para portal/catálogo; o chart não renderiza nada"
+    },
+    "environment": {
+      "type": "string",
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$",
+      "maxLength": 20
+    },
+    "environmentClass": {
+      "type": "string",
+      "enum": [
+        "nonprod",
+        "prod"
+      ]
+    },
+    "cloud": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "aws",
+            "azure",
+            "digitalocean",
+            "generic"
+          ]
+        },
+        "region": {
+          "type": "string",
+          "pattern": "^([a-z0-9-]+)?$"
+        }
+      }
+    },
+    "framework": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "aspnetEnvironment": {
+          "type": "string",
+          "enum": [
+            "",
+            "Development",
+            "Staging",
+            "Production"
+          ]
+        },
+        "proxyNetworks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/cidr"
+          }
+        },
+        "allowedHosts": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "$ref": "#/definitions/stringMap"
+        }
+      }
+    },
+    "image": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository"
+      ],
+      "anyOf": [
+        {
+          "required": [
+            "tag"
+          ],
+          "properties": {
+            "tag": {
+              "minLength": 5
+            }
+          }
+        },
+        {
+          "required": [
+            "digest"
+          ],
+          "properties": {
+            "digest": {
+              "minLength": 71
+            }
+          }
+        }
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "pattern": "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?(:[0-9]+)?(/[a-z0-9]([a-z0-9._-]*[a-z0-9])?)+$",
+          "description": "Qualquer registry OCI, sem tag nem digest"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^(v?[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?(\\+[0-9A-Za-z.]+)?)?$",
+          "description": "Semver (X.Y.Z, X.Y.Z-rc.1)"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^(sha256:[a-f0-9]{64})?$"
+        },
+        "pullPolicy": {
+          "type": "string",
+          "enum": [
+            "IfNotPresent",
+            "Always"
+          ]
+        },
+        "pullSecrets": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/dnsLabel"
+          }
+        }
+      }
+    },
+    "replicas": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "availability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "apiMinReplicas": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "pdb": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxUnavailable": {
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]+%$"
+                }
+              ]
+            }
+          }
+        },
+        "topologySpread": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "maxSkew": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "whenUnsatisfiable": {
+              "type": "string",
+              "enum": [
+                "ScheduleAnyway",
+                "DoNotSchedule"
+              ]
+            },
+            "topologyKeys": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "constraints": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "maxSkew",
+                  "topologyKey",
+                  "whenUnsatisfiable"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "architecture": {
+      "type": "string",
+      "enum": [
+        "",
+        "amd64",
+        "arm64"
+      ]
+    },
+    "nodeSelector": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "tolerations": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "affinity": {
+      "type": "object"
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "uid": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "gid": {
+          "type": "integer",
+          "minimum": 1000
+        },
+        "tmpSizeLimit": {
+          "$ref": "#/definitions/size"
+        },
+        "writablePaths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9._/-]+$"
+              },
+              "sizeLimit": {
+                "$ref": "#/definitions/size"
+              }
+            }
+          }
+        }
+      }
+    },
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "portName": {
+          "type": "string"
+        },
+        "terminationGracePeriodSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "preStopSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "env": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": [
+        "requests",
+        "limits"
+      ],
+      "properties": {
+        "requests": {
+          "type": "object",
+          "required": [
+            "cpu",
+            "memory"
+          ]
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "memory"
+          ]
+        }
+      }
+    },
+    "probes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "liveness": {
+          "$ref": "#/definitions/probe"
+        },
+        "readiness": {
+          "$ref": "#/definitions/probe"
+        },
+        "startup": {
+          "$ref": "#/definitions/probe"
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "serviceAccountName": {
+          "type": "string",
+          "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?)?$"
+        },
+        "automountToken": {
+          "type": "boolean"
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "aws": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "roleArn": {
+              "type": "string",
+              "pattern": "^(arn:aws[a-z-]*:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+)?$"
+            },
+            "accountId": {
+              "type": "string",
+              "pattern": "^([0-9]{12})?$"
+            },
+            "roleName": {
+              "type": "string"
+            }
+          }
+        },
+        "azure": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "clientId": {
+              "type": "string",
+              "pattern": "^([0-9a-fA-F-]{36})?$"
+            },
+            "tenantId": {
+              "type": "string",
+              "pattern": "^([0-9a-fA-F-]{36})?$"
+            }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "type": "string",
+          "enum": [
+            "",
+            "aws",
+            "azure",
+            "vault",
+            "generic"
+          ]
+        },
+        "store": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "#/definitions/dnsLabel"
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "ClusterSecretStore",
+                "SecretStore"
+              ]
+            }
+          }
+        },
+        "prefix": {
+          "type": "string",
+          "pattern": "^([^/].*[^/])?$|^[^/]$"
+        },
+        "refreshInterval": {
+          "type": "string",
+          "pattern": "^[0-9]+(s|m|h)$"
+        },
+        "keyTemplate": {
+          "type": "string"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/secretKey"
+          }
+        },
+        "dataFrom": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "key"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "key": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "extra": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "keys"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/dnsLabel"
+              },
+              "keys": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/definitions/secretKey"
+                }
+              }
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "awsRegion": {
+              "type": "string"
+            },
+            "azureVaultUri": {
+              "type": "string",
+              "pattern": "^(https://.+)?$"
+            },
+            "vaultAddress": {
+              "type": "string",
+              "pattern": "^(https?://.+)?$"
+            }
+          }
+        }
+      }
+    },
+    "ingress": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "preset": {
+          "type": "string",
+          "enum": [
+            "nginx",
+            "alb",
+            "agic",
+            "kong",
+            "do-nginx",
+            "none"
+          ]
+        },
+        "className": {
+          "type": "string"
+        },
+        "hosts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/host"
+          }
+        },
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9._~/{}-]*$"
+              },
+              "pathType": {
+                "type": "string",
+                "enum": [
+                  "Prefix",
+                  "Exact",
+                  "ImplementationSpecific"
+                ]
+              }
+            }
+          }
+        },
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "path",
+              "methods"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "path": {
+                "type": "string",
+                "pattern": "^/[A-Za-z0-9._~/{}-]*$"
+              },
+              "pathType": {
+                "type": "string",
+                "enum": [
+                  "Prefix",
+                  "Exact",
+                  "ImplementationSpecific"
+                ]
+              },
+              "methods": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "GET",
+                    "POST",
+                    "PUT",
+                    "PATCH",
+                    "DELETE",
+                    "OPTIONS",
+                    "HEAD",
+                    "QUERY"
+                  ]
+                }
+              },
+              "plugins": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "secretName": {
+              "type": "string"
+            }
+          }
+        },
+        "annotations": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "proxyNetworks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/cidr"
+          }
+        },
+        "edge": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "waf": {
+              "type": "boolean",
+              "description": "Há WAF na frente da exposição (declaração lida pelo DAST e pela conformidade)"
+            }
+          }
+        },
+        "alb": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "scheme": {
+              "type": "string",
+              "enum": [
+                "internal",
+                "internet-facing"
+              ]
+            },
+            "groupName": {
+              "type": "string"
+            },
+            "certificateArn": {
+              "type": "string",
+              "pattern": "^(arn:aws[a-z-]*:acm:[a-z0-9-]+:[0-9]{12}:certificate/[0-9a-f-]+)?$"
+            },
+            "sslPolicy": {
+              "type": "string"
+            },
+            "subnets": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "inboundCidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/cidr"
+              }
+            },
+            "deregistrationDelaySeconds": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 3600
+            },
+            "healthcheck": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "pattern": "^(/[A-Za-z0-9._~/-]*)?$"
+                },
+                "successCodes": {
+                  "type": "string",
+                  "pattern": "^[0-9]{3}([-,][0-9]{3})*$"
+                },
+                "intervalSeconds": {
+                  "type": "integer",
+                  "minimum": 5,
+                  "maximum": 300
+                },
+                "timeoutSeconds": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 120
+                },
+                "healthyThreshold": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 10
+                },
+                "unhealthyThreshold": {
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 10
+                }
+              }
+            }
+          }
+        },
+        "agic": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "sslCertificate": {
+              "type": "string"
+            },
+            "backendProtocol": {
+              "type": "string",
+              "enum": [
+                "http",
+                "https"
+              ]
+            }
+          }
+        },
+        "nginx": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proxyBodySize": {
+              "type": "string",
+              "pattern": "^[0-9]+[kKmMgG]?$",
+              "description": "Formato do nginx (30m, 1g)"
+            }
+          }
+        },
+        "kong": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "stripPath": {
+              "type": "boolean"
+            },
+            "upstream": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "algorithm": {
+                  "type": "string",
+                  "enum": [
+                    "round-robin",
+                    "least-connections",
+                    "consistent-hashing",
+                    "latency"
+                  ]
+                },
+                "hashOn": {
+                  "type": "object"
+                },
+                "healthchecks": {
+                  "type": "object"
+                }
+              }
+            },
+            "plugins": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "required": [
+                  "plugin"
+                ],
+                "properties": {
+                  "plugin": {
+                    "type": "string"
+                  },
+                  "config": {
+                    "type": "object"
+                  }
+                }
+              }
+            },
+            "defaultPlugins": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "autoscaling": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hpa": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cpuUtilization": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "keda": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "minReplicas": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxReplicas": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "pollingInterval": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "cooldownPeriod": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0
+            },
+            "advanced": {
+              "type": "object"
+            },
+            "businessHours": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "timezone": {
+                  "type": "string"
+                },
+                "start": {
+                  "$ref": "#/definitions/cron"
+                },
+                "end": {
+                  "$ref": "#/definitions/cron"
+                }
+              }
+            },
+            "queues": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "sqs",
+                      "azure-servicebus",
+                      "azure-queue",
+                      "rabbitmq"
+                    ]
+                  }
+                }
+              }
+            },
+            "triggers": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            "authentications": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "rollout": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "canary",
+            "rolling"
+          ]
+        },
+        "revisionHistoryLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "analysis": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "provider": {
+              "type": "string",
+              "enum": [
+                "prometheus",
+                "datadog",
+                "newrelic",
+                "cloudwatch",
+                "web",
+                "none"
+              ]
+            },
+            "templates": {
+              "$ref": "#/definitions/names"
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": [
+                  "name"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "observability": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string",
+              "pattern": "^/[A-Za-z0-9._~/-]*$"
+            },
+            "servicePort": {
+              "type": "integer"
+            },
+            "interval": {
+              "type": "string"
+            },
+            "scrapeTimeout": {
+              "type": "string"
+            },
+            "serviceMonitor": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "labels": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "otlp": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "endpoint": {
+              "type": "string",
+              "pattern": "^(https?://.+)?$"
+            },
+            "protocol": {
+              "type": "string",
+              "enum": [
+                "grpc",
+                "http/protobuf"
+              ]
+            },
+            "apiKeySecretKey": {
+              "type": "string"
+            },
+            "metrics": {
+              "type": "boolean"
+            },
+            "traces": {
+              "type": "boolean"
+            },
+            "logs": {
+              "type": "boolean"
+            }
+          }
+        },
+        "resourceAttributes": {
+          "$ref": "#/definitions/stringMap"
+        },
+        "vendor": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "type": "string",
+              "enum": [
+                "none",
+                "datadog",
+                "splunk",
+                "dynatrace",
+                "newrelic"
+              ]
+            },
+            "options": {
+              "$ref": "#/definitions/stringMap"
+            }
+          }
+        }
+      }
+    },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "egress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "allowedCidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/cidr"
+              }
+            },
+            "blockedCidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/cidr"
+              }
+            },
+            "dnsNamespace": {
+              "$ref": "#/definitions/dnsLabel"
+            },
+            "extraEgress": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "ingress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "monitoringNamespaces": {
+              "$ref": "#/definitions/namespaces"
+            },
+            "controllerNamespaces": {
+              "$ref": "#/definitions/namespaces"
+            },
+            "sourceCidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/cidr"
+              }
+            },
+            "extraIngress": {
+              "type": "array",
+              "items": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      }
+    },
+    "cronjob": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schedule": {
+          "type": "string"
+        },
+        "timeZone": {
+          "type": "string"
+        },
+        "suspend": {
+          "type": "boolean"
+        },
+        "concurrencyPolicy": {
+          "type": "string",
+          "enum": [
+            "Allow",
+            "Forbid",
+            "Replace"
+          ]
+        },
+        "backoffLimit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "startingDeadlineSeconds": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "ttlSecondsAfterFinished": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "hooks": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "jobs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/definitions/dnsLabel"
+              },
+              "phase": {
+                "type": "string",
+                "enum": [
+                  "PreSync",
+                  "Sync",
+                  "PostSync",
+                  "SyncFail"
+                ]
+              },
+              "image": {
+                "type": "string"
+              },
+              "command": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "array"
+              },
+              "backoffLimit": {
+                "type": "integer"
+              },
+              "serviceAccountName": {
+                "type": "string"
+              },
+              "automountToken": {
+                "type": "boolean"
+              },
+              "resources": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "cleanup": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "deployments": {
+              "$ref": "#/definitions/names"
+            },
+            "horizontalpodautoscalers": {
+              "$ref": "#/definitions/names"
+            },
+            "verticalpodautoscalers": {
+              "$ref": "#/definitions/names"
+            },
+            "scaledobjects": {
+              "$ref": "#/definitions/names"
+            },
+            "triggerauthentications": {
+              "$ref": "#/definitions/names"
+            },
+            "servicemonitors": {
+              "$ref": "#/definitions/names"
+            },
+            "externalsecrets": {
+              "$ref": "#/definitions/names"
+            }
+          }
+        },
+        "image": {
+          "type": "string"
+        }
+      }
+    },
+    "sync": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "automated": {
+          "type": "boolean"
+        }
+      }
+    },
+    "global": {
+      "type": "object"
+    }
+  }
+}

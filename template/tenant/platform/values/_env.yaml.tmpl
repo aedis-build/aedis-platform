@@ -1,0 +1,41 @@
+# Fatos do ambiente "__AEDIS_ENV__" (cluster, cofre, rede). Primeira camada de values de todos os apps;
+# apps/<app>/app.yaml e apps/<app>/env/__AEDIS_ENV__.yaml sobrescrevem.
+environment: __AEDIS_ENV__
+environmentClass: __AEDIS_ENV_CLASS__
+
+cloud:
+  provider: __AEDIS_CLOUD__
+  # Região da nuvem (ex.: us-east-1, brazilsouth). Usada por KEDA e presets.
+  region: ""
+
+secrets:
+  provider: __AEDIS_SECRETS_PROVIDER__
+  store:
+    # ClusterSecretStore instalado no cluster (ver charts/aedis-cluster do aedis-platform).
+    name: aedis-secrets
+    kind: ClusterSecretStore
+  # Prefixo dos segredos deste ambiente no cofre (ex.: "apps/__AEDIS_ENV__" no Vault, "__AEDIS_ENV__" na AWS/Azure).
+  prefix: __AEDIS_ENV__
+
+ingress:
+  preset: __AEDIS_INGRESS_PRESET__
+  # CIDR da VPC/VNet: de onde vem o tráfego do ingress/LB (X-Forwarded-* confiável). Obrigatório para APIs expostas.
+  proxyNetworks: []
+
+observability:
+  otlp:
+    # Endpoint do OpenTelemetry Collector do cluster. Vazio = telemetria OTLP desligada.
+    endpoint: ""
+  # Fornecedor de APM, se houver (none | datadog | splunk | dynatrace | newrelic).
+  vendor:
+    name: none
+
+rollout:
+  analysis:
+    # Backend das análises do canário (ClusterAnalysisTemplates de charts/aedis-cluster).
+    provider: prometheus
+
+networkPolicy:
+  egress:
+    # CIDR do data plane (banco, cache, endpoints privados). Ligue networkPolicy.egress.enabled por app quando preenchido.
+    allowedCidrs: []

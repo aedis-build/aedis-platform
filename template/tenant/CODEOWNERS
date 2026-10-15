@@ -1,0 +1,7 @@
+# Promoção para produção e mudanças de plataforma exigem revisão do time de segurança de plataforma.
+# O bot de promoção (argocd-image-updater / promote.yml) só escreve image.tag em env de não-prod.
+/platform/              @__AEDIS_ORG__/platform-security
+/apps/*/env/prod.yaml   @__AEDIS_ORG__/platform-security
+/argocd/                @__AEDIS_ORG__/platform-security
+/.github/               @__AEDIS_ORG__/platform-security
+/CODEOWNERS             @__AEDIS_ORG__/platform-security

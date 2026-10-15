@@ -1,0 +1,40 @@
+# API genérica (kind/qualquer Kubernetes): nginx, Vault via ESO, canário com Prometheus.
+name: orders-api
+namespace: shop
+type: api
+owner: shop-team
+environment: dev
+environmentClass: nonprod
+cloud:
+  provider: generic
+image:
+  repository: ghcr.io/example/orders-api
+  tag: 1.4.0-rc.2
+secrets:
+  prefix: apps/dev
+  keys:
+    - name: Database__ConnectionString
+      key: orders-api
+      property: ConnectionString
+    - name: Auth__ClientSecret
+      key: orders-api
+      property: AuthClientSecret
+ingress:
+  enabled: true
+  preset: nginx
+  hosts: [orders.dev.example.com]
+  tls:
+    secretName: orders-dev-tls
+  proxyNetworks: [10.0.0.0/8]
+  edge:
+    waf: false
+observability:
+  otlp:
+    endpoint: http://otel-collector.observability:4317
+networkPolicy:
+  egress:
+    enabled: true
+    allowedCidrs: [10.20.0.0/16]
+  ingress:
+    enabled: true
+    controllerNamespaces: [ingress-nginx]

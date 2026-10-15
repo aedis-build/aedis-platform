@@ -1,0 +1,104 @@
+suite: baseline de segurança sempre ligado
+templates:
+  - rollout.yaml
+  - cronjob.yaml
+tests:
+  - it: Rollout roda non-root, read-only, sem capabilities, com seccomp e sem token de SA
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - isKind:
+          of: Rollout
+      - equal:
+          path: spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.template.spec.securityContext.runAsUser
+          value: 1654
+      - equal:
+          path: spec.template.spec.securityContext.seccompProfile.type
+          value: RuntimeDefault
+      - equal:
+          path: spec.template.spec.automountServiceAccountToken
+          value: false
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.allowPrivilegeEscalation
+          value: false
+      - contains:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          content: ALL
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: tmp
+            emptyDir: {}
+      - isNotEmpty:
+          path: spec.template.spec.containers[0].resources.limits.memory
+
+  - it: uid pode ser trocado por app sem perder o restante do baseline
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      security.uid: 10001
+      security.gid: 10001
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 10001
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+
+  - it: CronJob aplica o mesmo baseline no pod do job
+    template: cronjob.yaml
+    values:
+      - ../ci/cronjob-generic.yaml
+    asserts:
+      - isKind:
+          of: CronJob
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.securityContext.runAsNonRoot
+          value: true
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.jobTemplate.spec.template.spec.automountServiceAccountToken
+          value: false
+
+  - it: caminho gravável extra vira emptyDir e /tmp em writablePaths é rejeitado
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      security.writablePaths:
+        - path: /app/cache
+          sizeLimit: 1Gi
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: writable-0
+            mountPath: /app/cache
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: writable-0
+            emptyDir:
+              sizeLimit: 1Gi
+
+  - it: /tmp em writablePaths falha
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    set:
+      security.writablePaths:
+        - path: /tmp
+    asserts:
+      - failedTemplate:
+          errorPattern: "/tmp já é montado"

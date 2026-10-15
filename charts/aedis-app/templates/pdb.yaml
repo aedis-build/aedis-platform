@@ -1,0 +1,14 @@
+{{- if and (ne .Values.type "cronjob") .Values.availability.pdb.enabled (ge (include "aedis.minReplicas" . | int) 2) }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "aedis.name" . }}
+  namespace: {{ include "aedis.namespace" . }}
+  labels:
+    {{- include "aedis.labels" . | nindent 4 }}
+spec:
+  maxUnavailable: {{ .Values.availability.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "aedis.selectorLabels" . | nindent 6 }}
+{{- end }}

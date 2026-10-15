@@ -1,0 +1,35 @@
+suite: referência da imagem
+templates:
+  - rollout.yaml
+tests:
+  - it: sem digest usa repo:tag
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: ghcr.io/example/orders-api:1.4.0-rc.2
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/version"]
+          value: 1.4.0-rc.2
+
+  - it: com digest usa repo@digest mesmo havendo tag
+    values:
+      - ../ci/api-aws-alb-datadog.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: 123456789012.dkr.ecr.us-east-1.amazonaws.com/payments-api@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+      - equal:
+          path: spec.template.metadata.labels["app.kubernetes.io/version"]
+          value: 2.0.0
+
+  - it: Deployment com estratégia rolling (sem Argo Rollouts)
+    values:
+      - ../ci/worker-generic-rabbitmq.yaml
+    asserts:
+      - isKind:
+          of: Deployment
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
