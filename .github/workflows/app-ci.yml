@@ -1,5 +1,6 @@
 # Pipeline padrão de um repositório de aplicação Aedis: Conventional Commits, testes com cobertura e gate,
-# CodeQL. (build-image e sast entram quando os workflows existirem.) O template aedis-api/aedis-worker gera o caller.
+# SAST (Semgrep + regras Aedis), CodeQL e, em tag vX.Y.Z[-rc.N], build da imagem assinada com SBOM.
+# O template aedis-api/aedis-worker gera o caller.
 name: app-ci
 
 on:
@@ -18,6 +19,31 @@ on:
       min-branch:
         type: number
         default: 0
+      image:
+        description: Nome da imagem sem tag (ghcr.io/org/app). Vazio = não constrói imagem.
+        type: string
+        default: ""
+      registry:
+        type: string
+        default: ghcr
+      dockerfile:
+        type: string
+        default: Dockerfile
+      aws-role-arn:
+        type: string
+        default: ""
+      aws-region:
+        type: string
+        default: ""
+      azure-client-id:
+        type: string
+        default: ""
+      azure-tenant-id:
+        type: string
+        default: ""
+      azure-subscription-id:
+        type: string
+        default: ""
       platform-ref:
         type: string
         default: v1
@@ -44,6 +70,14 @@ jobs:
       min-branch: ${{ inputs.min-branch }}
       platform-ref: ${{ inputs.platform-ref }}
 
+  sast:
+    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@v1
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      platform-ref: ${{ inputs.platform-ref }}
+
   codeql:
     name: CodeQL
     runs-on: ubuntu-latest
@@ -62,3 +96,22 @@ jobs:
           languages: csharp
           build-mode: autobuild
       - uses: github/codeql-action/analyze@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4
+
+  image:
+    if: inputs.image != '' && startsWith(github.ref, 'refs/tags/v')
+    needs: [coverage, sast]
+    uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@v1
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      image: ${{ inputs.image }}
+      version: ${{ github.ref_name }}
+      registry: ${{ inputs.registry }}
+      dockerfile: ${{ inputs.dockerfile }}
+      aws-role-arn: ${{ inputs.aws-role-arn }}
+      aws-region: ${{ inputs.aws-region }}
+      azure-client-id: ${{ inputs.azure-client-id }}
+      azure-tenant-id: ${{ inputs.azure-tenant-id }}
+      azure-subscription-id: ${{ inputs.azure-subscription-id }}
