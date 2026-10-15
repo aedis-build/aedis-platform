@@ -1,0 +1,24 @@
+{
+  "Security": {
+    "ForwardedHeaders": {
+      // ruleid: aedis.trust-all-proxies-in-config
+      "TrustAllProxies": true
+    },
+    "Https": {
+      // ruleid: aedis.hsts-disabled-in-config
+      "EnableHsts": false
+    }
+  },
+  "Database": {
+    // ruleid: aedis.secret-in-config
+    "ConnectionString": "Host=localhost;Database=x;Username=u;Password=p",
+    // ok: aedis.secret-in-config
+    "CommandTimeout": "30"
+  },
+  "Auth": {
+    // ok: aedis.secret-in-config
+    "ClientSecret": "",
+    // ok: aedis.secret-in-config
+    "ApiKey": "${API_KEY}"
+  }
+}

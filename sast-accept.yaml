@@ -1,0 +1,6 @@
+# Aceites de risco do SAST deste repositório (lidos por scripts/sast-summary.py). Cada item expira em `until`.
+accept:
+  - rule: python.lang.security.use-defused-xml-parse.use-defused-xml-parse
+    path: scripts/coverage-gate.py
+    reason: "o XML lido é o relatório Cobertura gerado pelo coverlet no mesmo job, não entrada externa; expat do Python 3.8+ não resolve entidades externas"
+    until: 2027-10-15

@@ -67,25 +67,31 @@ jobs:
 
       - name: Render + validação de todos os apps
         id: validate
+        env:
+          CHART: ${{ inputs.chart }}
+          CHART_VERSION: ${{ inputs.chart-version }}
+          K8S_VERSION: ${{ inputs.kubernetes-version }}
         run: |
           set -euo pipefail
-          chart="${{ inputs.chart }}"
+          chart="$CHART"
           [ -n "$chart" ] || chart=".aedis-platform/charts/aedis-app"
           mkdir -p rendered
-          if bash .aedis-platform/scripts/validate-apps.sh --chart "$chart" --chart-version "${{ inputs.chart-version }}" --out rendered --k8s "${{ inputs.kubernetes-version }}"; then
+          if bash .aedis-platform/scripts/validate-apps.sh --chart "$chart" --chart-version "$CHART_VERSION" --out rendered --k8s "$K8S_VERSION"; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else
             echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
           fi
 
       - name: Trivy config (misconfiguração nos manifestos renderizados)
+        env:
+          SEVERITY: ${{ inputs.trivy-severity }}
         run: |
           set -euo pipefail
           VER=0.76.0
           curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${VER}/trivy_${VER}_Linux-64bit.tar.gz" | sudo tar -xz -C /usr/local/bin trivy
           trivy --version
           rm -f rendered/*.err rendered/*.kubeconform
-          trivy config --quiet --severity "${{ inputs.trivy-severity }}" --exit-code 1 rendered
+          trivy config --quiet --severity "$SEVERITY" --exit-code 1 rendered
 
       - name: Publicar sumário
         if: always()

@@ -1,0 +1,124 @@
+# Regras SAST conscientes do framework Aedis. Complementam os rulesets públicos (p/owasp-top-ten, p/secrets,
+# p/csharp). Cada regra tem fixture em semgrep/tests (semgrep --test). Sem regras de negócio.
+rules:
+  - id: aedis.enable-authentication-false
+    languages: [csharp]
+    severity: ERROR
+    message: "Host com EnableAuthentication desligado: fora de Development o AedisApiHost recusa iniciar; em Development expõe tudo sem login. Remova o override."
+    metadata: { category: security, cwe: "CWE-306", owasp: "A07:2021", aedis-control: PLT-13 }
+    pattern-regex: 'EnableAuthentication\s*=>\s*false'
+
+  - id: aedis.swagger-enabled-unconditionally
+    languages: [csharp]
+    severity: WARNING
+    message: "Swagger ligado sem condição de ambiente expõe o contrato da API em produção. Condicione a Development ou remova."
+    metadata: { category: security, cwe: "CWE-200", aedis-control: PLT-13 }
+    pattern-regex: 'EnableSwagger\s*=>\s*true'
+
+  - id: aedis.allow-anonymous-on-write-verb
+    languages: [csharp]
+    severity: ERROR
+    message: "[AllowAnonymous] em verbo de escrita ($VERB): qualquer um grava sem autenticação. Use [Authorize] ou um fluxo explícito de credencial."
+    metadata: { category: security, cwe: "CWE-306", owasp: "A01:2021", aedis-control: PLT-13 }
+    patterns:
+      - pattern-either:
+          - pattern: |
+              [AllowAnonymous]
+              [$VERB(...)]
+              $RET $M(...) { ... }
+          - pattern: |
+              [$VERB(...)]
+              [AllowAnonymous]
+              $RET $M(...) { ... }
+          - pattern: |
+              [AllowAnonymous]
+              [$VERB]
+              $RET $M(...) { ... }
+          - pattern: |
+              [$VERB]
+              [AllowAnonymous]
+              $RET $M(...) { ... }
+      - metavariable-regex:
+          metavariable: $VERB
+          regex: ^(HttpPost|HttpPut|HttpPatch|HttpDelete)$
+
+  - id: aedis.dapper-sql-interpolation
+    languages: [csharp]
+    severity: ERROR
+    message: "SQL montado por interpolação/concatenação em $M: injeção de SQL. Use parâmetros (new { ... }) ou os critérios do Aedis.Database."
+    metadata: { category: security, cwe: "CWE-89", owasp: "A03:2021", aedis-control: PLT-13 }
+    patterns:
+      - pattern-either:
+          - pattern: $X.$M($"...", ...)
+          - pattern: $X.$M<$T>($"...", ...)
+          - pattern: $X.$M($A + $B, ...)
+          - pattern: $X.$M<$T>($A + $B, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^(Query|QueryAsync|QueryFirst|QueryFirstAsync|QueryFirstOrDefault|QueryFirstOrDefaultAsync|QuerySingle|QuerySingleAsync|QuerySingleOrDefault|QuerySingleOrDefaultAsync|QueryMultiple|QueryMultipleAsync|Execute|ExecuteAsync|ExecuteScalar|ExecuteScalarAsync|ExecuteReader|ExecuteReaderAsync)$
+
+  - id: aedis.tls-validation-disabled
+    languages: [csharp]
+    severity: ERROR
+    message: "Validação do certificado TLS desligada: aceita qualquer servidor (MITM). Confie na CA ou fixe o certificado via HttpClientProfile."
+    metadata: { category: security, cwe: "CWE-295", owasp: "A02:2021", aedis-control: PLT-13 }
+    pattern-either:
+      - pattern: $H.ServerCertificateCustomValidationCallback = (...) => true;
+      - pattern: $H.ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+      - pattern: ServicePointManager.ServerCertificateValidationCallback = (...) => true;
+      - pattern: $H.ServerCertificateValidationCallback = (...) => true;
+
+  - id: aedis.insecure-deserialization
+    languages: [csharp]
+    severity: ERROR
+    message: "Desserialização insegura ($X): permite execução de código a partir de dados externos."
+    metadata: { category: security, cwe: "CWE-502", owasp: "A08:2021", aedis-control: PLT-13 }
+    pattern-either:
+      - pattern: new BinaryFormatter()
+      - pattern: TypeNameHandling.All
+      - pattern: TypeNameHandling.Objects
+      - pattern: TypeNameHandling.Auto
+      - pattern: TypeNameHandling.Arrays
+
+  - id: aedis.sensitive-data-in-log
+    languages: [csharp]
+    severity: WARNING
+    message: "Valor sensível ($ARG) passado ao log. A redaction do Aedis mascara por nome de propriedade, não argumentos posicionais; não logue o valor."
+    metadata: { category: security, cwe: "CWE-532", owasp: "A09:2021", aedis-control: PLT-13 }
+    patterns:
+      - pattern: $LOG.$M(..., $ARG, ...)
+      - metavariable-regex:
+          metavariable: $M
+          regex: ^Log(Trace|Debug|Information|Warning|Error|Critical)$
+      - metavariable-regex:
+          metavariable: $ARG
+          regex: (?i)^[\w.]*(password|passwd|secret|token|apikey|api_key|connectionstring)[\w.]*$
+
+  - id: aedis.cors-any-origin-with-credentials
+    languages: [csharp]
+    severity: ERROR
+    message: "CORS com AllowAnyOrigin e AllowCredentials: o navegador recusa e a intenção é insegura. Liste as origens (Security:Cors:AllowedOrigins)."
+    metadata: { category: security, cwe: "CWE-942", owasp: "A05:2021", aedis-control: PLT-13 }
+    pattern-regex: 'AllowAnyOrigin\(\)[\s\S]{0,300}?AllowCredentials\(\)|AllowCredentials\(\)[\s\S]{0,300}?AllowAnyOrigin\(\)'
+
+  - id: aedis.trust-all-proxies-in-config
+    languages: [json]
+    severity: WARNING
+    message: "Security:ForwardedHeaders:TrustAllProxies=true em configuração versionada: X-Forwarded-For de qualquer origem é aceito (spoofing de IP). Deixe o chart fixar KnownNetworks."
+    metadata: { category: security, cwe: "CWE-348", owasp: "A05:2021", aedis-control: PLT-12 }
+    pattern-regex: '"TrustAllProxies"\s*:\s*true'
+
+  - id: aedis.hsts-disabled-in-config
+    languages: [json]
+    severity: WARNING
+    message: "HSTS desligado em configuração versionada. Em produção o chart liga; não fixe false no appsettings.json."
+    metadata: { category: security, cwe: "CWE-319", owasp: "A02:2021", aedis-control: PLT-12 }
+    pattern-regex: '"EnableHsts"\s*:\s*false'
+
+  - id: aedis.secret-in-config
+    languages: [json]
+    severity: ERROR
+    message: "Valor que parece segredo ($1) em appsettings versionado. Segredos vêm do cofre (ExternalSecret / Aedis.Secrets), nunca do git."
+    metadata: { category: security, cwe: "CWE-798", owasp: "A07:2021", aedis-control: PLT-02 }
+    paths: { exclude: ["appsettings.Development.json"] }
+    pattern-regex: '"(ConnectionString|Password|ClientSecret|ApiKey|Secret|Token|AccessKey|SecretAccessKey|PrivateKeyPem)"\s*:\s*"(?!\s*"|\$\{)[^"]{6,}"'
