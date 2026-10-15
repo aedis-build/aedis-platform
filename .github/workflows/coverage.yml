@@ -54,7 +54,9 @@ jobs:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: dotnet test com coverlet
-        run: dotnet test "${{ inputs.solution }}" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
+        env:
+          SOLUTION: ${{ inputs.solution }}
+        run: dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Baseline do branch principal (sumário anterior)
         if: github.event_name == 'pull_request'
