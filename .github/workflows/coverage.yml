@@ -20,6 +20,10 @@ on:
         description: Cobertura mínima de branches (%)
         type: number
         default: 0
+      no-regression:
+        description: Falha se a cobertura de linhas cair mais de 1 ponto em relação ao último run verde do branch base (L2+)
+        type: boolean
+        default: false
       platform-ref:
         type: string
         default: v1
@@ -59,7 +63,7 @@ jobs:
         run: dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Baseline do branch principal (sumário anterior)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && inputs.no-regression
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -70,6 +74,12 @@ jobs:
           run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "$BASE_REF" --workflow "$WORKFLOW" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
           [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n coverage-summary -D baseline || echo "sem baseline"
 
+      - name: Mesclar relatórios (um por projeto de teste conta a mesma assembly várias vezes)
+        run: |
+          set -euo pipefail
+          dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
+          reportgenerator -reports:'TestResults/**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:Cobertura
+
       - name: Gate
         id: gate
         env:
@@ -79,7 +89,7 @@ jobs:
           set -euo pipefail
           script=scripts/coverage-gate.py; [ -f "$script" ] || script=.aedis-platform/scripts/coverage-gate.py
           baseline=""; [ -f baseline/coverage-summary.json ] && baseline="--baseline baseline/coverage-summary.json"
-          if python3 "$script" --reports 'TestResults/**/coverage.cobertura.xml' --min-line "$MIN_LINE" --min-branch "$MIN_BRANCH" $baseline --out coverage-summary.json; then
+          if python3 "$script" --reports 'coverage/Cobertura.xml' --min-line "$MIN_LINE" --min-branch "$MIN_BRANCH" $baseline --out coverage-summary.json; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else
             echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
@@ -91,5 +101,5 @@ jobs:
           name: coverage-summary
           path: |
             coverage-summary.json
-            TestResults/**/coverage.cobertura.xml
+            coverage/Cobertura.xml
           if-no-files-found: ignore
