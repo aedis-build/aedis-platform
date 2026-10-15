@@ -81,7 +81,7 @@ jobs:
       - name: Trivy config (misconfiguração nos manifestos renderizados)
         run: |
           set -euo pipefail
-          VER=0.65.0
+          VER=0.76.0
           curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${VER}/trivy_${VER}_Linux-64bit.tar.gz" | sudo tar -xz -C /usr/local/bin trivy
           trivy --version
           rm -f rendered/*.err rendered/*.kubeconform
