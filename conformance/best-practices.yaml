@@ -1,0 +1,72 @@
+# Critérios do selo OpenSSF Best Practices (bestpractices.dev) traduzidos em itens verificáveis num repositório
+# GitHub. Lido por `aedis platform validate --level N` (fase 2: só os checks "repo" são avaliados localmente)
+# e pelo portal. Nível do selo exigido por nível de conformidade: L1 passing, L2 silver, L3 gold.
+schema: aedis.platform/best-practices/v1
+tiers:
+  passing:
+    - id: BP-01
+      criterion: Política de vulnerabilidade publicada (SECURITY.md com canal privado de reporte)
+      check: file-exists
+      path: SECURITY.md
+    - id: BP-02
+      criterion: Licença OSI aprovada no repositório
+      check: file-exists
+      path: LICENSE
+    - id: BP-03
+      criterion: Guia de contribuição
+      check: file-exists
+      path: CONTRIBUTING.md
+    - id: BP-04
+      criterion: Testes automatizados rodam no CI
+      check: workflow-exists
+      path: .github/workflows
+    - id: BP-05
+      criterion: Análise estática no CI (CodeQL ou Semgrep)
+      check: workflow-uses
+      pattern: "codeql-action|sast.yml|semgrep"
+    - id: BP-06
+      criterion: Dependências atualizadas automaticamente (Dependabot/Renovate)
+      check: file-exists
+      path: .github/dependabot.yml
+    - id: BP-07
+      criterion: Branch principal protegida, mudanças só por PR revisada
+      check: ruleset-as-code
+      path: .github/rulesets/main.json
+  silver:
+    - id: BP-11
+      criterion: Releases assinadas (cosign nas imagens/charts, provenance)
+      check: workflow-uses
+      pattern: "cosign"
+    - id: BP-12
+      criterion: Dependências pinadas (actions por SHA)
+      check: actions-pinned-by-sha
+    - id: BP-13
+      criterion: Cobertura de testes medida e com limiar
+      check: workflow-uses
+      pattern: "coverage.yml"
+    - id: BP-14
+      criterion: 2FA obrigatório na organização
+      check: manual
+    - id: BP-15
+      criterion: Conventional Commits e histórico linear
+      check: workflow-uses
+      pattern: "conventional-commits.yml"
+  gold:
+    - id: BP-21
+      criterion: Dois ou mais mantenedores com revisão obrigatória por code owner
+      check: manual
+    - id: BP-22
+      criterion: SBOM publicado para cada release
+      check: workflow-uses
+      pattern: "sbom"
+    - id: BP-23
+      criterion: Builds reprodutíveis ou com proveniência verificável (SLSA)
+      check: workflow-uses
+      pattern: "provenance"
+    - id: BP-24
+      criterion: Testes dinâmicos (DAST) na superfície exposta
+      check: workflow-uses
+      pattern: "dast.yml"
+    - id: BP-25
+      criterion: Evidências retidas e revisão periódica de aceites de risco
+      check: manual
