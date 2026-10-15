@@ -1,0 +1,72 @@
+{{- $a := .Values.analysis }}
+{{- if and $a.enabled (eq $a.provider "prometheus") }}
+{{- /* Seletor do canário: pods do Rollout com o hash do template atual (args que o chart aedis-app passa). */}}
+{{- $canary := `namespace="{{args.namespace}}", pod=~"{{args.rollout}}-{{args.canary-hash}}-.*"` }}
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: aedis-http-success-rate
+  labels:
+    app.kubernetes.io/part-of: aedis
+spec:
+  args:
+    - name: namespace
+    - name: rollout
+    - name: canary-hash
+  metrics:
+    - name: http-success-rate
+      interval: {{ $a.intervalSeconds }}s
+      failureLimit: {{ $a.failureLimit }}
+      successCondition: result[0] >= {{ $a.successRateMin }}
+      provider:
+        prometheus:
+          address: {{ $a.prometheus.address }}
+          query: |
+            sum(rate(http_server_request_duration_seconds_count{ {{ $canary }}, http_response_status_code!~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(http_server_request_duration_seconds_count{ {{ $canary }} }[5m])), 1e-9)
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: aedis-http-p95-latency
+  labels:
+    app.kubernetes.io/part-of: aedis
+spec:
+  args:
+    - name: namespace
+    - name: rollout
+    - name: canary-hash
+  metrics:
+    - name: http-p95-latency
+      interval: {{ $a.intervalSeconds }}s
+      failureLimit: {{ $a.failureLimit }}
+      successCondition: result[0] <= {{ $a.p95LatencySecondsMax }}
+      provider:
+        prometheus:
+          address: {{ $a.prometheus.address }}
+          query: |
+            histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{ {{ $canary }} }[5m])) by (le))
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ClusterAnalysisTemplate
+metadata:
+  name: aedis-pod-restarts
+  labels:
+    app.kubernetes.io/part-of: aedis
+spec:
+  args:
+    - name: namespace
+    - name: rollout
+    - name: canary-hash
+  metrics:
+    - name: pod-restarts
+      interval: {{ $a.intervalSeconds }}s
+      failureLimit: 1
+      successCondition: result[0] == 0
+      provider:
+        prometheus:
+          address: {{ $a.prometheus.address }}
+          query: |
+            sum(increase(kube_pod_container_status_restarts_total{ {{ $canary }} }[10m]))
+{{- end }}

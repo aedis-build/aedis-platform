@@ -66,6 +66,32 @@ jobs:
           pattern="$(printf '%s|%s' 'pay''hop' 'nuc''lea')"
           if grep -rniE "$pattern" --exclude-dir=.git --exclude-dir=bin --exclude-dir=obj . ; then echo "referência a fornecedor encontrada"; exit 1; fi
 
+  cluster-chart:
+    name: Chart aedis-cluster + políticas Kyverno
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Instalar helm, kubeconform e kyverno
+        run: |
+          set -euo pipefail
+          HELM_VERSION=v3.18.4
+          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"             | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
+          curl -sSL "https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz" | sudo tar -xz -C /usr/local/bin kubeconform
+          KYVERNO_VERSION=v1.13.4
+          curl -sSL "https://github.com/kyverno/kyverno/releases/download/${KYVERNO_VERSION}/kyverno-cli_${KYVERNO_VERSION}_linux_x86_64.tar.gz" | sudo tar -xz -C /usr/local/bin kyverno
+      - name: lint + render + kubeconform
+        run: |
+          set -euo pipefail
+          for f in charts/aedis-cluster/ci/*.yaml; do helm lint charts/aedis-cluster -f "$f"; done
+          helm template c charts/aedis-cluster -f charts/aedis-cluster/ci/full-values.yaml > cluster.yaml
+          kubeconform -strict -summary -kubernetes-version 1.31.0 -skip ClusterSecretStore             -schema-location default             -schema-location 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json'             cluster.yaml
+      - name: Políticas Kyverno (renders bons passam, pod ruim falha)
+        run: bash scripts/test-kyverno-policies.sh
+
   cli:
     name: CLI
     uses: ./.github/workflows/coverage.yml

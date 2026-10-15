@@ -1,0 +1,20 @@
+# Tudo ligado, para lint/render/testes das políticas.
+namespaces:
+  - name: shop
+    environmentClass: nonprod
+  - name: fin
+    environmentClass: prod
+secretStore:
+  enabled: true
+  provider: vault
+  vault:
+    server: https://vault.example.internal:8200
+analysis:
+  enabled: true
+kyverno:
+  enabled: true
+  validationFailureAction: Enforce
+  imageVerification:
+    enabled: true
+    subjectRegex: '^https://github\.com/example/.+/\.github/workflows/.+@refs/.*$'
+    requireSbom: true

@@ -1,0 +1,64 @@
+# Add-ons de cluster. Instale uma release por cluster. Pré-requisitos (CRDs): Kyverno, External Secrets
+# Operator, Argo Rollouts. Cada bloco é opcional.
+
+# Namespaces de aplicação: PSA restricted + labels que as políticas e o ESO usam.
+namespaces: []
+#   - name: shop
+#     environmentClass: prod      # nonprod | prod
+
+# ClusterSecretStore "aedis-secrets" que os ExternalSecrets do chart aedis-app referenciam.
+secretStore:
+  enabled: false
+  name: aedis-secrets
+  # aws | azure | vault
+  provider: vault
+  aws:
+    region: ""
+    # Role assumida pelo ESO (IRSA do controlador quando vazio).
+    role: ""
+  azure:
+    vaultUrl: ""
+    tenantId: ""
+    # Workload Identity do ESO: ServiceAccount do controlador.
+    serviceAccountName: external-secrets
+    serviceAccountNamespace: external-secrets
+  vault:
+    server: ""
+    path: secret
+    version: v2
+    # Auth Kubernetes: role do Vault e ServiceAccount do ESO.
+    kubernetesRole: external-secrets
+    mountPath: kubernetes
+    serviceAccountName: external-secrets
+    serviceAccountNamespace: external-secrets
+
+# ClusterAnalysisTemplates do canário (nomes que o chart aedis-app referencia).
+analysis:
+  enabled: false
+  # prometheus (outros providers: contribuição em analysis/<provider>)
+  provider: prometheus
+  prometheus:
+    address: http://prometheus-operated.monitoring:9090
+  # Limiares.
+  successRateMin: 0.95
+  p95LatencySecondsMax: 1
+  intervalSeconds: 60
+  failureLimit: 3
+
+# Políticas Kyverno.
+kyverno:
+  enabled: false
+  # Audit | Enforce. L1: Audit; L2+: Enforce.
+  validationFailureAction: Audit
+  # Namespaces fora das políticas (sistema, operadores).
+  excludeNamespaces: [kube-system, kube-public, kube-node-lease, kyverno, external-secrets, argo-rollouts, argocd, keda, monitoring, ingress-nginx, cert-manager]
+  imageVerification:
+    enabled: false
+    # Assinatura keyless (cosign) emitida pelo GitHub Actions: issuer fixo, subject = workflow autorizado.
+    issuer: https://token.actions.githubusercontent.com
+    # Regex do subject do certificado, ex.: ^https://github\.com/minha-org/.+/\.github/workflows/.+@refs/.*$
+    subjectRegex: ""
+    # Registries/imagens cobertas (glob). Vazio = todas.
+    images: ["*"]
+    # Exige attestation de SBOM (SPDX) além da assinatura (L3).
+    requireSbom: false
