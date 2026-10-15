@@ -1,0 +1,64 @@
+# Pipeline padrão de um repositório de aplicação Aedis: Conventional Commits, testes com cobertura e gate,
+# CodeQL. (build-image e sast entram quando os workflows existirem.) O template aedis-api/aedis-worker gera o caller.
+name: app-ci
+
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: Solução ou projeto de testes
+        type: string
+        required: true
+      dotnet-version:
+        type: string
+        default: 10.0.x
+      min-line:
+        type: number
+        default: 60
+      min-branch:
+        type: number
+        default: 0
+      platform-ref:
+        type: string
+        default: v1
+
+permissions: {}
+
+jobs:
+  commits:
+    if: github.event_name == 'pull_request'
+    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@v1
+    permissions:
+      contents: read
+    with:
+      platform-ref: ${{ inputs.platform-ref }}
+
+  coverage:
+    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@v1
+    permissions:
+      contents: read
+    with:
+      solution: ${{ inputs.solution }}
+      dotnet-version: ${{ inputs.dotnet-version }}
+      min-line: ${{ inputs.min-line }}
+      min-branch: ${{ inputs.min-branch }}
+      platform-ref: ${{ inputs.platform-ref }}
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - uses: github/codeql-action/init@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4
+        with:
+          languages: csharp
+          build-mode: autobuild
+      - uses: github/codeql-action/analyze@4e828ff8d448a8a6e532957b1811f387a63867e8 # v3.29.4

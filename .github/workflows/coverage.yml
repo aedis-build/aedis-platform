@@ -1,0 +1,88 @@
+# Workflow reutilizável: testes .NET com cobertura (coverlet) e gate de limiar/regressão.
+# Produz coverage-summary.json (aedis.platform/coverage-summary/v1) e o relatório Cobertura como artefatos.
+name: coverage
+
+on:
+  workflow_call:
+    inputs:
+      solution:
+        description: Solução ou projeto de testes
+        type: string
+        required: true
+      dotnet-version:
+        type: string
+        default: 10.0.x
+      min-line:
+        description: Cobertura mínima de linhas (%)
+        type: number
+        default: 60
+      min-branch:
+        description: Cobertura mínima de branches (%)
+        type: number
+        default: 0
+      platform-ref:
+        type: string
+        default: v1
+    outputs:
+      result:
+        value: ${{ jobs.test.outputs.result }}
+
+permissions: {}
+
+jobs:
+  test:
+    name: Testes + cobertura
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      result: ${{ steps.gate.outputs.result }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Scripts do aedis-platform
+        if: github.repository != 'aedis-build/aedis-platform'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: aedis-build/aedis-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .aedis-platform
+          persist-credentials: false
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+
+      - name: dotnet test com coverlet
+        run: dotnet test "${{ inputs.solution }}" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
+
+      - name: Baseline do branch principal (sumário anterior)
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "${{ github.event.pull_request.base.ref }}" --workflow "${{ github.workflow }}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n coverage-summary -D baseline || echo "sem baseline"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Gate
+        id: gate
+        run: |
+          set -euo pipefail
+          script=scripts/coverage-gate.py; [ -f "$script" ] || script=.aedis-platform/scripts/coverage-gate.py
+          baseline=""; [ -f baseline/coverage-summary.json ] && baseline="--baseline baseline/coverage-summary.json"
+          if python3 "$script" --reports 'TestResults/**/coverage.cobertura.xml' --min-line "${{ inputs.min-line }}" --min-branch "${{ inputs.min-branch }}" $baseline --out coverage-summary.json; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
+          fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: coverage-summary
+          path: |
+            coverage-summary.json
+            TestResults/**/coverage.cobertura.xml
+          if-no-files-found: ignore
