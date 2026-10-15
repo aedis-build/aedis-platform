@@ -1,0 +1,4 @@
+# Só as políticas, sem verificação de assinatura (a CLI do Kyverno consultaria o registry): para kyverno apply/test.
+kyverno:
+  enabled: true
+  validationFailureAction: Enforce

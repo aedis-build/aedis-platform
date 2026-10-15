@@ -16,7 +16,7 @@ Platform. Serve para AWS (EKS), Azure (AKS), DigitalOcean (DOKS) e qualquer Kube
 | Kyverno | políticas do nível L2+ | não (L1) |
 
 O `ClusterSecretStore` aponta para o cofre da nuvem com a identidade do próprio ESO. Exemplos por cofre em
-`charts/aedis-cluster` (próxima fase) e nos guias de nuvem.
+`charts/aedis-cluster` (values `secretStore.*`) e nos guias de nuvem.
 
 ## 2. Criar o repositório GitOps
 

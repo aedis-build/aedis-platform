@@ -1,0 +1,13 @@
+apiVersion: v2
+name: aedis-cluster
+description: >-
+  Add-ons de cluster do Aedis Platform: namespaces com PSA restricted, ClusterSecretStore do cofre (AWS Secrets
+  Manager, Azure Key Vault, Vault), ClusterAnalysisTemplates do canário (Prometheus) e políticas Kyverno
+  (baseline de pod, imagens assinadas e pinadas, segredos só via ESO, labels).
+type: application
+version: 0.1.0
+kubeVersion: ">=1.29.0-0"
+keywords: [aedis, kyverno, external-secrets, argo-rollouts]
+home: https://github.com/aedis-build/aedis-platform
+annotations:
+  artifacthub.io/license: Apache-2.0

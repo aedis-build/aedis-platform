@@ -1,0 +1,270 @@
+{{- $k := .Values.kyverno }}
+{{- if $k.enabled }}
+{{- $action := $k.validationFailureAction }}
+{{- $exclude := $k.excludeNamespaces }}
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aedis-pod-baseline
+  labels:
+    app.kubernetes.io/part-of: aedis
+  annotations:
+    policies.kyverno.io/title: Baseline de pod do Aedis
+    policies.kyverno.io/description: PSS restricted, root filesystem read-only e requests/limits em todo container (PLT-01).
+spec:
+  validationFailureAction: {{ $action }}
+  background: true
+  rules:
+    - name: pod-security-restricted
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ toJson $exclude }}
+      validate:
+        podSecurity:
+          level: restricted
+          version: latest
+    - name: read-only-root-filesystem
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ toJson $exclude }}
+      validate:
+        message: "Todo container precisa de securityContext.readOnlyRootFilesystem=true (grave em emptyDir)."
+        pattern:
+          spec:
+            =(initContainers):
+              - securityContext:
+                  readOnlyRootFilesystem: true
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: true
+    - name: requests-and-limits
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ toJson $exclude }}
+      validate:
+        message: "Todo container precisa de resources.requests (cpu, memory) e resources.limits.memory."
+        pattern:
+          spec:
+            containers:
+              - resources:
+                  requests:
+                    cpu: "?*"
+                    memory: "?*"
+                  limits:
+                    memory: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aedis-image-policy
+  labels:
+    app.kubernetes.io/part-of: aedis
+  annotations:
+    policies.kyverno.io/title: Imagens do Aedis
+    policies.kyverno.io/description: Sem tag latest ou sem tag; em namespaces prod a imagem é referenciada por digest (PLT-08).
+spec:
+  validationFailureAction: {{ $action }}
+  background: true
+  rules:
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ toJson $exclude }}
+      validate:
+        message: "Imagem sem tag ou com :latest não é permitida; use semver ou digest."
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                any:
+                  - key: "{{ `{{ element.image }}` }}"
+                    operator: Equals
+                    value: "*:latest"
+                  - key: "{{ `{{ regex_match('^[^:@]+$', element.image) }}` }}"
+                    operator: Equals
+                    value: true
+    - name: require-digest-in-prod
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaceSelector:
+                matchLabels:
+                  aedis.build/environment-class: prod
+      validate:
+        message: "Em produção a imagem precisa ser referenciada por digest (repo@sha256:...)."
+        foreach:
+          - list: request.object.spec.containers
+            deny:
+              conditions:
+                all:
+                  - key: "{{ `{{ regex_match('@sha256:[a-f0-9]{64}$', element.image) }}` }}"
+                    operator: Equals
+                    value: false
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aedis-secrets-via-eso
+  labels:
+    app.kubernetes.io/part-of: aedis
+  annotations:
+    policies.kyverno.io/title: Segredos só via External Secrets
+    policies.kyverno.io/description: Em namespaces de aplicação, Secrets opacos precisam ser donos de um ExternalSecret (PLT-02).
+spec:
+  validationFailureAction: {{ $action }}
+  background: true
+  rules:
+    - name: secret-owned-by-externalsecret
+      match:
+        any:
+          - resources:
+              kinds: [Secret]
+              namespaceSelector:
+                matchExpressions:
+                  - key: aedis.build/environment-class
+                    operator: Exists
+      exclude:
+        any:
+          - resources:
+              selector:
+                matchLabels:
+                  owner: helm
+          - resources:
+              kinds: [Secret]
+              names: ["sh.helm.release.v1.*", "*-token-*", "*.dockerconfigjson"]
+      preconditions:
+        all:
+          - key: "{{ `{{ request.object.type }}` }}"
+            operator: AnyIn
+            value: [Opaque, kubernetes.io/basic-auth]
+      validate:
+        message: "Secret criado fora do External Secrets Operator. Declare em secrets.keys do app; o cofre é a fonte."
+        pattern:
+          metadata:
+            ownerReferences:
+              - kind: ExternalSecret
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aedis-workload-labels
+  labels:
+    app.kubernetes.io/part-of: aedis
+  annotations:
+    policies.kyverno.io/title: Labels dos workloads
+spec:
+  validationFailureAction: {{ $action }}
+  background: true
+  rules:
+    - name: require-standard-labels
+      match:
+        any:
+          - resources:
+              kinds: [Deployment, StatefulSet, CronJob, argoproj.io/v1alpha1/Rollout]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ toJson $exclude }}
+      validate:
+        message: "Workloads precisam das labels app.kubernetes.io/name e app.kubernetes.io/part-of."
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: "?*"
+              app.kubernetes.io/part-of: "?*"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aedis-namespace-psa
+  labels:
+    app.kubernetes.io/part-of: aedis
+  annotations:
+    policies.kyverno.io/title: PSA restricted nos namespaces de aplicação
+spec:
+  rules:
+    - name: add-psa-labels
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+              selector:
+                matchExpressions:
+                  - key: aedis.build/environment-class
+                    operator: Exists
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              pod-security.kubernetes.io/enforce: restricted
+              pod-security.kubernetes.io/warn: restricted
+{{- if $k.imageVerification.enabled }}
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: aedis-verify-image-signature
+  labels:
+    app.kubernetes.io/part-of: aedis
+  annotations:
+    policies.kyverno.io/title: Imagens assinadas (cosign keyless)
+    policies.kyverno.io/description: Toda imagem coberta precisa de assinatura keyless emitida pelo workflow autorizado (PLT-06); opcionalmente attestation SPDX (PLT-07).
+spec:
+  validationFailureAction: {{ $action }}
+  background: false
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: {{ toJson $exclude }}
+      verifyImages:
+        - imageReferences: {{ toJson $k.imageVerification.images }}
+          mutateDigest: true
+          required: true
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: {{ $k.imageVerification.issuer }}
+                    subjectRegExp: {{ required "kyverno.imageVerification.subjectRegex é obrigatório" $k.imageVerification.subjectRegex | quote }}
+                    rekor:
+                      url: https://rekor.sigstore.dev
+          {{- if $k.imageVerification.requireSbom }}
+          attestations:
+            - type: https://spdx.dev/Document
+              attestors:
+                - entries:
+                    - keyless:
+                        issuer: {{ $k.imageVerification.issuer }}
+                        subjectRegExp: {{ $k.imageVerification.subjectRegex | quote }}
+                        rekor:
+                          url: https://rekor.sigstore.dev
+          {{- end }}
+{{- end }}
+{{- end }}
