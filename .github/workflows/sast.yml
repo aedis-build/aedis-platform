@@ -47,19 +47,24 @@ jobs:
           persist-credentials: false
 
       - name: Semgrep
+        env:
+          EXTRA_CONFIGS: ${{ inputs.extra-configs }}
         run: |
           set -euo pipefail
           rules=semgrep/rules/aedis.yml; [ -f "$rules" ] || rules=.aedis-platform/semgrep/rules/aedis.yml
-          semgrep scan --metrics=off --config p/owasp-top-ten --config p/secrets --config p/csharp --config "$rules" ${{ inputs.extra-configs }} \
+          # shellcheck disable=SC2086
+          semgrep scan --metrics=off --config p/owasp-top-ten --config p/secrets --config p/csharp --config "$rules" $EXTRA_CONFIGS \
             --exclude .aedis-platform --exclude semgrep/tests \
             --sarif --output sast.sarif --json-output sast.json || true
 
       - name: Gate
         id: gate
+        env:
+          ACCEPT_FILE: ${{ inputs.accept-file }}
         run: |
           set -euo pipefail
           script=scripts/sast-summary.py; [ -f "$script" ] || script=.aedis-platform/scripts/sast-summary.py
-          accept=""; [ -f "${{ inputs.accept-file }}" ] && accept="--accept ${{ inputs.accept-file }}"
+          accept=""; [ -f "$ACCEPT_FILE" ] && accept="--accept $ACCEPT_FILE"
           if python3 "$script" --input sast.json $accept --out sast-summary.json; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else
