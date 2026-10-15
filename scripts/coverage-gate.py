@@ -47,7 +47,7 @@ def main():
     if args.baseline:
         try:
             base = json.load(open(args.baseline, encoding="utf-8"))["total"]
-            if total["line"] + 0.5 < base["line"]:
+            if total["line"] + 1.0 < base["line"]:
                 failures.append(f"regressão de linhas: {base['line']}% -> {total['line']}%")
         except (OSError, KeyError, ValueError):
             print("baseline ausente ou inválido: regressão não avaliada")

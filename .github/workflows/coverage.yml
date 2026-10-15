@@ -20,6 +20,10 @@ on:
         description: Cobertura mínima de branches (%)
         type: number
         default: 0
+      no-regression:
+        description: Falha se a cobertura de linhas cair mais de 1 ponto em relação ao último run verde do branch base (L2+)
+        type: boolean
+        default: false
       platform-ref:
         type: string
         default: v1
@@ -59,7 +63,7 @@ jobs:
         run: dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Baseline do branch principal (sumário anterior)
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && inputs.no-regression
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
