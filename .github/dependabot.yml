@@ -7,7 +7,14 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
   - package-ecosystem: nuget
     directory: /cli
     schedule:
       interval: weekly
+    groups:
+      nuget:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"
