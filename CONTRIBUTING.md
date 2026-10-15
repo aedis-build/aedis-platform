@@ -40,3 +40,15 @@ exige rodar os testes da CLI.
 Mudanças em `conformance/levels.yaml` só sobem limiares em versões major do chart. Novos controles ganham um
 `PLT-xx`, uma linha em `docs/conformance.md` e, quando verificáveis localmente, uma checagem em
 `cli/Aedis.Cli/Validation/ConformanceChecker.cs`.
+
+## Proteção da branch `main`
+
+O ruleset vive em `.github/rulesets/main.json` (só PR com squash, histórico linear, checks `Conventional Commits`,
+`Chart aedis-app` e `Template do tenant valida com o chart` obrigatórios e atualizados, sem force-push nem
+deleção). Aplicar/atualizar:
+
+```bash
+gh api -X POST repos/aedis-build/aedis-platform/rulesets --input .github/rulesets/main.json
+```
+
+Com um segundo mantenedor, suba `required_approving_review_count` para 1 e ligue `require_code_owner_review`.
