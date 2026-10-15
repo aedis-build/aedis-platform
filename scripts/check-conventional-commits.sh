@@ -22,7 +22,12 @@ check() {
 rc=0
 case "${1:-}" in
   --range)
-    while IFS= read -r subject; do [ -n "$subject" ] && { check "$subject" || rc=1; }; done < <(git log --no-merges --format=%s "$2")
+    # commits de bots entram por squash com título convencional; só o título é validado para eles
+    while IFS=$'	' read -r author subject; do
+      [ -n "$subject" ] || continue
+      [ "$author" = "dependabot[bot]" ] && continue
+      check "$subject" || rc=1
+    done < <(git log --no-merges --format='%an%x09%s' "$2")
     ;;
   --file)
     subject="$(grep -v '^#' "$2" | sed -n '1p')"; check "$subject" || rc=1
