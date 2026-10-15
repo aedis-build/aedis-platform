@@ -1,0 +1,55 @@
+# Exige Conventional Commits em todos os commits da PR e no título da PR (que vira a mensagem do squash).
+# Reutilizável: o repo GitOps do tenant e os repos de app chamam com `uses:`. É a base do versionamento
+# semântico automatizado (release notes e bump de versão derivam dos tipos feat/fix/!).
+name: conventional-commits
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  workflow_call:
+    inputs:
+      platform-ref:
+        description: Ref do aedis-platform de onde vem o script de verificação
+        type: string
+        default: v1
+
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Script de verificação (do aedis-platform, quando chamado por outro repo)
+        if: github.repository != 'aedis-build/aedis-platform'
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: aedis-build/aedis-platform
+          ref: ${{ inputs.platform-ref || 'v1' }}
+          path: .aedis-platform
+          persist-credentials: false
+
+      - name: Commits da PR
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          script=scripts/check-conventional-commits.sh
+          [ -f "$script" ] || script=.aedis-platform/scripts/check-conventional-commits.sh
+          bash "$script" --range "$BASE..$HEAD"
+
+      - name: Título da PR
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          script=scripts/check-conventional-commits.sh
+          [ -f "$script" ] || script=.aedis-platform/scripts/check-conventional-commits.sh
+          bash "$script" --message "$TITLE"

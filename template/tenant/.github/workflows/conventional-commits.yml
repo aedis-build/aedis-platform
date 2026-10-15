@@ -1,0 +1,15 @@
+name: conventional-commits
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions: {}
+
+jobs:
+  check:
+    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@__AEDIS_PLATFORM_REF__
+    permissions:
+      contents: read
+    with:
+      platform-ref: __AEDIS_PLATFORM_REF__

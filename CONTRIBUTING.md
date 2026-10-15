@@ -7,7 +7,11 @@
   próprio e com teste próprio. Um preset nunca altera o baseline de segurança.
 - **Zero referência a terceiros de origem** nos arquivos (o CI roda um grep de vazamento).
 - **Actions pinadas por SHA**, `permissions: {}` por padrão, só OIDC — nunca credenciais de longa duração.
-- Commits convencionais (`feat(chart): ...`, `fix(cli): ...`, `docs: ...`).
+- **Conventional Commits obrigatórios** em todo commit e no título da PR (`feat(chart): ...`, `fix(cli): ...`, `docs: ...`,
+  `feat!:` para breaking). O CI bloqueia o que foge do padrão (`.github/workflows/conventional-commits.yml`); instale o hook
+  local com `scripts/install-git-hooks.sh`. É deles que o versionamento semântico (chart, CLI, workflows) é derivado.
+- **Semver em tudo**: tags de imagem (`X.Y.Z`, `X.Y.Z-rc.N`; o schema do chart rejeita outros formatos), versão do chart
+  (`Chart.yaml` = tag `chart-aedis-app-vX.Y.Z`), CLI e workflows (`v1` flutuante + `v1.x.y`).
 
 ## Chart
 
