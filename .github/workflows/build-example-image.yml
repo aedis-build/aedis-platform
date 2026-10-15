@@ -1,0 +1,28 @@
+# Dogfooding do build-image.yml: constrói, assina e anexa SBOM da imagem de exemplo em ghcr.io/aedis-build/examples/app.
+name: build-example-image
+
+on:
+  push:
+    branches: [main]
+    paths: ["examples/app/**", ".github/workflows/build-image.yml", ".github/workflows/build-example-image.yml"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Tag semver
+        type: string
+        default: 0.1.0
+
+permissions: {}
+
+jobs:
+  image:
+    uses: ./.github/workflows/build-image.yml
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    with:
+      image: ghcr.io/aedis-build/examples/app
+      version: ${{ inputs.version || '0.1.0' }}
+      context: examples/app
+      dockerfile: examples/app/Dockerfile
