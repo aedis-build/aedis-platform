@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           VER=0.65.0
-          curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/v${VER}/contrib/install.sh" | sudo sh -s -- -b /usr/local/bin "v${VER}"
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${VER}/trivy_${VER}_Linux-64bit.tar.gz" | sudo tar -xz -C /usr/local/bin trivy
           trivy --version
           trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 rendered
 
