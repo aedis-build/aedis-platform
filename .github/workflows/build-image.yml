@@ -1,0 +1,204 @@
+# Workflow reutilizável: build multi-arch da imagem, proveniência e SBOM (BuildKit), Trivy (HIGH/CRITICAL
+# falha), assinatura keyless (cosign + OIDC do GitHub) e attestation SPDX. Registry: ghcr (GITHUB_TOKEN),
+# ecr (OIDC -> role), acr (OIDC -> federated credential) ou other (usuário/senha via secrets).
+# Produz build-image-summary.json (aedis.platform/build-image-summary/v1) e o digest como output.
+name: build-image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Nome completo da imagem sem tag (ghcr.io/org/app, 123.dkr.ecr.us-east-1.amazonaws.com/app, org.azurecr.io/app)
+        type: string
+        required: true
+      version:
+        description: Tag semver (X.Y.Z ou X.Y.Z-rc.N)
+        type: string
+        required: true
+      registry:
+        description: ghcr | ecr | acr | other
+        type: string
+        default: ghcr
+      context:
+        type: string
+        default: .
+      dockerfile:
+        type: string
+        default: Dockerfile
+      platforms:
+        type: string
+        default: linux/amd64,linux/arm64
+      push:
+        type: boolean
+        default: true
+      trivy-severity:
+        type: string
+        default: HIGH,CRITICAL
+      aws-role-arn:
+        type: string
+        default: ""
+      aws-region:
+        type: string
+        default: ""
+      azure-client-id:
+        type: string
+        default: ""
+      azure-tenant-id:
+        type: string
+        default: ""
+      azure-subscription-id:
+        type: string
+        default: ""
+    secrets:
+      registry-username:
+        required: false
+      registry-password:
+        required: false
+    outputs:
+      digest:
+        value: ${{ jobs.build.outputs.digest }}
+      image:
+        value: ${{ jobs.build.outputs.image }}
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build, scan, sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      image: ${{ inputs.image }}
+    env:
+      IMAGE: ${{ inputs.image }}
+      VERSION: ${{ inputs.version }}
+      SEVERITY: ${{ inputs.trivy-severity }}
+    steps:
+      - name: Versão é semver
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]] || { echo "version '$VERSION' não é semver"; exit 1; }
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Login GHCR
+        if: inputs.registry == 'ghcr'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Credenciais AWS (OIDC)
+        if: inputs.registry == 'ecr'
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ inputs.aws-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+      - name: Login ECR
+        if: inputs.registry == 'ecr'
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      - name: Login Azure (OIDC)
+        if: inputs.registry == 'acr'
+        uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ inputs.azure-client-id }}
+          tenant-id: ${{ inputs.azure-tenant-id }}
+          subscription-id: ${{ inputs.azure-subscription-id }}
+      - name: Login ACR
+        if: inputs.registry == 'acr'
+        run: az acr login --name "${IMAGE%%.azurecr.io*}"
+
+      - name: Login (outro registry)
+        if: inputs.registry == 'other'
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ inputs.image }}
+          username: ${{ secrets.registry-username }}
+          password: ${{ secrets.registry-password }}
+
+      - name: Build + push (proveniência e SBOM do BuildKit)
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ inputs.context }}
+          file: ${{ inputs.dockerfile }}
+          platforms: ${{ inputs.platforms }}
+          push: ${{ inputs.push }}
+          tags: ${{ inputs.image }}:${{ inputs.version }}
+          provenance: mode=max
+          sbom: true
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+
+      - name: Trivy (vulnerabilidades da imagem)
+        if: inputs.push
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          VER=0.76.0
+          curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${VER}/trivy_${VER}_Linux-64bit.tar.gz" | sudo tar -xz -C /usr/local/bin trivy
+          trivy image --quiet --severity "$SEVERITY" --exit-code 1 --ignore-unfixed "$IMAGE@$DIGEST"
+
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        if: inputs.push
+      - name: Assinar (cosign keyless)
+        if: inputs.push
+        env:
+          COSIGN_YES: "true"
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign "$IMAGE@$DIGEST"
+
+      - name: SBOM (syft, SPDX)
+        if: inputs.push
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: ${{ inputs.image }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+      - name: Attestation do SBOM
+        if: inputs.push
+        env:
+          COSIGN_YES: "true"
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign attest --predicate sbom.spdx.json --type spdxjson "$IMAGE@$DIGEST"
+
+      - name: Sumário
+        if: always()
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PUSHED: ${{ inputs.push }}
+          OUTCOME: ${{ job.status }}
+        run: |
+          set -euo pipefail
+          python3 - <<'EOF'
+          import json, os, datetime
+          json.dump({"schema": "aedis.platform/build-image-summary/v1",
+                     "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                     "image": os.environ["IMAGE"], "version": os.environ["VERSION"], "digest": os.environ.get("DIGEST", ""),
+                     "pushed": os.environ["PUSHED"] == "true", "signed": os.environ["PUSHED"] == "true" and os.environ["OUTCOME"] == "success",
+                     "sbomAttested": os.environ["PUSHED"] == "true" and os.environ["OUTCOME"] == "success",
+                     "result": "pass" if os.environ["OUTCOME"] == "success" else "fail"},
+                    open("build-image-summary.json", "w"), indent=2)
+          EOF
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: build-image-summary
+          path: |
+            build-image-summary.json
+            sbom.spdx.json
+          if-no-files-found: ignore
