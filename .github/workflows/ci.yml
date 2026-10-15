@@ -56,7 +56,8 @@ jobs:
         run: |
           set -euo pipefail
           VER=0.65.0
-          curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/v${VER}/contrib/install.sh" | sh -s -- -b /usr/local/bin "v${VER}"
+          curl -sfL "https://raw.githubusercontent.com/aquasecurity/trivy/v${VER}/contrib/install.sh" | sudo sh -s -- -b /usr/local/bin "v${VER}"
+          trivy --version
           trivy config --quiet --severity HIGH,CRITICAL --exit-code 1 rendered
 
       - name: Vazamento de fornecedor
