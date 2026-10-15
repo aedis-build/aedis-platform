@@ -26,7 +26,7 @@
         "required_status_checks": [
           { "context": "Conventional Commits" },
           { "context": "Chart aedis-app" },
-          { "context": "CLI" },
+          { "context": "CLI / Testes + cobertura" },
           { "context": "Template do tenant valida com o chart" }
         ]
       }
