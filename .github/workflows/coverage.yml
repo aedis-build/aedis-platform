@@ -54,25 +54,32 @@ jobs:
           dotnet-version: ${{ inputs.dotnet-version }}
 
       - name: dotnet test com coverlet
-        run: dotnet test "${{ inputs.solution }}" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
+        env:
+          SOLUTION: ${{ inputs.solution }}
+        run: dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Baseline do branch principal (sumário anterior)
         if: github.event_name == 'pull_request'
         continue-on-error: true
-        run: |
-          set -euo pipefail
-          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "${{ github.event.pull_request.base.ref }}" --workflow "${{ github.workflow }}" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
-          [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n coverage-summary -D baseline || echo "sem baseline"
         env:
           GH_TOKEN: ${{ github.token }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          WORKFLOW: ${{ github.workflow }}
+        run: |
+          set -euo pipefail
+          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --branch "$BASE_REF" --workflow "$WORKFLOW" --status success --limit 1 --json databaseId --jq '.[0].databaseId')"
+          [ -n "$run_id" ] && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" -n coverage-summary -D baseline || echo "sem baseline"
 
       - name: Gate
         id: gate
+        env:
+          MIN_LINE: ${{ inputs.min-line }}
+          MIN_BRANCH: ${{ inputs.min-branch }}
         run: |
           set -euo pipefail
           script=scripts/coverage-gate.py; [ -f "$script" ] || script=.aedis-platform/scripts/coverage-gate.py
           baseline=""; [ -f baseline/coverage-summary.json ] && baseline="--baseline baseline/coverage-summary.json"
-          if python3 "$script" --reports 'TestResults/**/coverage.cobertura.xml' --min-line "${{ inputs.min-line }}" --min-branch "${{ inputs.min-branch }}" $baseline --out coverage-summary.json; then
+          if python3 "$script" --reports 'TestResults/**/coverage.cobertura.xml' --min-line "$MIN_LINE" --min-branch "$MIN_BRANCH" $baseline --out coverage-summary.json; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else
             echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
