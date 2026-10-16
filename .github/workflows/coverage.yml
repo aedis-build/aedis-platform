@@ -24,6 +24,10 @@ on:
         description: Falha se a cobertura de linhas cair mais de 1 ponto em relação ao último run verde do branch base (L2+)
         type: boolean
         default: false
+      test-env:
+        description: Variáveis de ambiente para o dotnet test, uma por linha (KEY=VALUE), ex. para ligar suítes de integração opt-in
+        type: string
+        default: ""
       platform-ref:
         type: string
         default: v1
@@ -60,7 +64,11 @@ jobs:
       - name: dotnet test com coverlet
         env:
           SOLUTION: ${{ inputs.solution }}
-        run: dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
+          TEST_ENV: ${{ inputs.test-env }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r kv; do [ -n "$kv" ] && export "$kv"; done <<< "$TEST_ENV"
+          dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
 
       - name: Baseline do branch principal (sumário anterior)
         if: github.event_name == 'pull_request' && inputs.no-regression
