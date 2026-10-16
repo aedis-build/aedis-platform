@@ -86,7 +86,8 @@ jobs:
         run: |
           set -euo pipefail
           dotnet tool install --global dotnet-reportgenerator-globaltool --version 5.5.11
-          reportgenerator -reports:'TestResults/**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:Cobertura
+          # Saída de source generators (obj/**/*.g.cs) não é código do repositório e sai da medição.
+          reportgenerator -reports:'TestResults/**/coverage.cobertura.xml' -targetdir:coverage -reporttypes:Cobertura -filefilters:'-*/obj/*;-*.g.cs'
 
       - name: Gate
         id: gate
