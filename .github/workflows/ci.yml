@@ -97,6 +97,7 @@ jobs:
     uses: ./.github/workflows/coverage.yml
     permissions:
       contents: read
+      packages: read
     with:
       solution: cli/Aedis.Cli.slnx
       min-line: 60
