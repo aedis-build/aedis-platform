@@ -29,6 +29,7 @@
   <ItemGroup>
     <EmbeddedResource Include="..\..\template\tenant\**\*" LogicalName="tenant/%(RecursiveDir)%(Filename)%(Extension)" />
     <EmbeddedResource Include="..\..\conformance\levels.yaml" LogicalName="conformance/levels.yaml" />
+    <EmbeddedResource Include="..\..\conformance\best-practices.yaml" LogicalName="conformance/best-practices.yaml" />
   </ItemGroup>
 
   <ItemGroup>

@@ -64,3 +64,19 @@ Os níveis são **controles implementados e verificáveis**, não certificação
 ## Licença
 
 Apache-2.0. Veja [LICENSE](LICENSE) e [SECURITY.md](SECURITY.md).
+
+## Auditoria da organização (`aedis org audit`)
+
+Aplica a régua de conformidade aos repositórios de uma organização GitHub: critérios do selo OpenSSF Best
+Practices por tier (`conformance/best-practices.yaml`), proteção viva do branch padrão e mínimos do OpenSSF
+Scorecard (`conformance/levels.yaml`). Gera `org-audit-summary.json` (schema `aedis.platform/org-audit/v1`) e
+`org-audit.md`, e com `--apply` cria/atualiza o ruleset `aedis-main` no nível pedido.
+
+```bash
+aedis org audit --org minha-org --level 3 --out ./auditoria
+aedis org audit --org minha-org --level 3 --apply --required-check "ci / build"
+```
+
+Autenticação: `GITHUB_TOKEN`/`GH_TOKEN` ou a sessão do `gh`. Com `--apply`, o token precisa de administração
+dos repositórios. Por padrão o papel de administrador pode contornar o ruleset via PR (fica auditável); use
+`--no-admin-bypass` quando houver dois ou mais mantenedores.
