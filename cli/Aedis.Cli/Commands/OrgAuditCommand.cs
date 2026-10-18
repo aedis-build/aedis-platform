@@ -62,6 +62,8 @@ public static class OrgAuditCommand
                     var ruleset = RulesetGuardrail.Build(targetLevel, requiredApprovals, required, adminBypass);
                     audit.RulesetApplied = await api.UpsertRulesetAsync(orgName, name, ruleset, cancellationToken);
                     audit.RequiredChecks = required;
+                    // O portão de merge (aedis pr gate) habilita auto-merge na PR aprovada; o repositório precisa permitir.
+                    await api.PatchRepositoryAsync(orgName, name, new JsonObject { ["allow_auto_merge"] = true, ["delete_branch_on_merge"] = true }, cancellationToken);
                 }
 
                 audits.Add(audit);
@@ -126,7 +128,7 @@ public static class OrgAuditCommand
 
         var summaries = new Dictionary<string, JsonObject?>(StringComparer.Ordinal);
         foreach (var artifact in practices.SummaryArtifacts)
-            summaries[artifact] = await api.TryGetArtifactSummaryAsync(org, repo, branch, artifact, ct);
+            summaries[artifact] = await api.TryGetArtifactSummaryAsync(org, repo, artifact, ct, branch: branch);
 
         return new RepoSnapshot {
             Name = repo,

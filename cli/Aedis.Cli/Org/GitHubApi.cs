@@ -124,13 +124,15 @@ public sealed class GitHubApi
     }
 
     /// <summary>
-    ///     Sumário JSON (<c>&lt;artifact&gt;.json</c>) do artefato mais recente com esse nome produzido no branch padrão;
-    ///     nulo quando não há artefato válido ou o arquivo não está no zip.
+    ///     Sumário JSON (<c>&lt;artifact&gt;.json</c>) do artefato mais recente com esse nome produzido no
+    ///     <paramref name="branch" /> ou no commit <paramref name="headSha" />; nulo quando não há artefato válido ou
+    ///     o arquivo não está no zip.
     /// </summary>
-    public async Task<JsonObject?> TryGetArtifactSummaryAsync(string org, string repo, string branch, string artifact, CancellationToken ct) {
-        var list = await GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/actions/artifacts?name={Uri.EscapeDataString(artifact)}&per_page=20", ct);
+    public async Task<JsonObject?> TryGetArtifactSummaryAsync(string org, string repo, string artifact, CancellationToken ct, string? branch = null, string? headSha = null) {
+        var list = await GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/actions/artifacts?name={Uri.EscapeDataString(artifact)}&per_page=50", ct);
         var latest = list?["artifacts"]?.AsArray().OfType<JsonObject>()
-            .Where(a => a["expired"]?.GetValue<bool>() != true && a["workflow_run"]?["head_branch"]?.GetValue<string>() == branch)
+            .Where(a => a["expired"]?.GetValue<bool>() != true)
+            .Where(a => headSha is null ? a["workflow_run"]?["head_branch"]?.GetValue<string>() == branch : a["workflow_run"]?["head_sha"]?.GetValue<string>() == headSha)
             .OrderByDescending(a => a["created_at"]?.GetValue<string>(), StringComparer.Ordinal)
             .FirstOrDefault();
         if (latest?["archive_download_url"]?.GetValue<string>() is not { } url) return null;
@@ -142,6 +144,92 @@ public sealed class GitHubApi
         if (entry is null) return null;
         using var reader = new StreamReader(entry.Open());
         return JsonNode.Parse(await reader.ReadToEndAsync(ct)) as JsonObject;
+    }
+
+    /// <summary>PR pelo número; nula quando não existe.</summary>
+    public Task<JsonObject?> GetPullRequestAsync(string org, string repo, int number, CancellationToken ct) =>
+        GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/pulls/{number}", ct);
+
+    /// <summary>PR aberta cujo head é <paramref name="sha" />; nula quando não há.</summary>
+    public async Task<JsonObject?> FindOpenPullRequestBySha(string org, string repo, string sha, CancellationToken ct) {
+        var pulls = await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/commits/{sha}/pulls", ct);
+        var open = pulls?.OfType<JsonObject>().FirstOrDefault(p => p["state"]?.GetValue<string>() == "open" && p["head"]?["sha"]?.GetValue<string>() == sha);
+        return open is null ? null : await GetPullRequestAsync(org, repo, open["number"]!.GetValue<int>(), ct);
+    }
+
+    /// <summary>Caminhos dos arquivos tocados pela PR.</summary>
+    public async Task<IReadOnlyList<string>> ListPullRequestFilesAsync(string org, string repo, int number, CancellationToken ct) {
+        var files = new List<string>();
+        for (var page = 1; ; page++) {
+            var array = await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/pulls/{number}/files?per_page=100&page={page}", ct) ?? [];
+            files.AddRange(array.OfType<JsonObject>().Select(f => f["filename"]!.GetValue<string>()));
+            if (array.Count < 100) return files;
+        }
+    }
+
+    /// <summary>Mensagens dos commits da PR.</summary>
+    public async Task<IReadOnlyList<string>> ListPullRequestCommitMessagesAsync(string org, string repo, int number, CancellationToken ct) {
+        var array = await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/pulls/{number}/commits?per_page=100", ct) ?? [];
+        return array.OfType<JsonObject>().Select(c => c["commit"]?["message"]?.GetValue<string>() ?? "").ToList();
+    }
+
+    /// <summary>Nome do check → conclusão no commit (nula enquanto não concluiu); fica a execução mais recente de cada nome.</summary>
+    public async Task<IReadOnlyDictionary<string, string?>> GetCheckConclusionsAsync(string org, string repo, string sha, CancellationToken ct) {
+        var runs = await GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/commits/{sha}/check-runs?per_page=100", ct);
+        var result = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var ordered = (runs?["check_runs"]?.AsArray().OfType<JsonObject>() ?? []).OrderBy(r => r["started_at"]?.GetValue<string>(), StringComparer.Ordinal);
+        foreach (var run in ordered)
+            result[run["name"]!.GetValue<string>()] = run["status"]?.GetValue<string>() == "completed" ? run["conclusion"]?.GetValue<string>() : null;
+        return result;
+    }
+
+    /// <summary>Corpos dos comentários da PR/issue.</summary>
+    public async Task<IReadOnlyList<string>> ListIssueCommentsAsync(string org, string repo, int number, CancellationToken ct) {
+        var array = await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/issues/{number}/comments?per_page=100", ct) ?? [];
+        return array.OfType<JsonObject>().Select(c => c["body"]?.GetValue<string>() ?? "").ToList();
+    }
+
+    /// <summary>Comenta na PR/issue.</summary>
+    public Task CommentAsync(string org, string repo, int number, string body, CancellationToken ct) =>
+        SendAsync(HttpMethod.Post, $"https://api.github.com/repos/{org}/{repo}/issues/{number}/comments", new JsonObject { ["body"] = body }, ct);
+
+    /// <summary>Aprova a PR com o token atual (precisa ser uma identidade diferente do autor, ex.: a App).</summary>
+    public Task ApprovePullRequestAsync(string org, string repo, int number, string body, CancellationToken ct) =>
+        SendAsync(HttpMethod.Post, $"https://api.github.com/repos/{org}/{repo}/pulls/{number}/reviews", new JsonObject { ["event"] = "APPROVE", ["body"] = body }, ct);
+
+    /// <summary>Habilita o auto-merge da PR (GraphQL); o repositório precisa permitir auto-merge.</summary>
+    public async Task EnableAutoMergeAsync(string pullRequestNodeId, string mergeMethod, CancellationToken ct) {
+        var query = new JsonObject {
+            ["query"] = "mutation($id: ID!, $method: PullRequestMergeMethod!) { enablePullRequestAutoMerge(input: {pullRequestId: $id, mergeMethod: $method}) { clientMutationId } }",
+            ["variables"] = new JsonObject { ["id"] = pullRequestNodeId, ["method"] = mergeMethod.ToUpperInvariant() }
+        };
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.github.com/graphql") { Content = JsonContent.Create(query) };
+        using var response = await _http.SendAsync(request, ct);
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (!response.IsSuccessStatusCode || (JsonNode.Parse(body) as JsonObject)?["errors"] is JsonArray { Count: > 0 } errors)
+            throw new InvalidOperationException($"GitHub rejected enablePullRequestAutoMerge ({(int)response.StatusCode}): {body[..Math.Min(body.Length, 300)]}");
+    }
+
+    /// <summary>Altera configurações do repositório (<c>PATCH /repos/{org}/{repo}</c>), ex.: auto-merge.</summary>
+    public Task PatchRepositoryAsync(string org, string repo, JsonObject settings, CancellationToken ct) =>
+        SendAsync(HttpMethod.Patch, $"https://api.github.com/repos/{org}/{repo}", settings, ct);
+
+    /// <summary>Troca o JWT da GitHub App por um token da instalação na organização.</summary>
+    public async Task<string> CreateInstallationTokenAsync(string org, string appJwt, CancellationToken ct) {
+        using var find = new HttpRequestMessage(HttpMethod.Get, $"https://api.github.com/orgs/{org}/installation");
+        find.Headers.Authorization = new AuthenticationHeaderValue("Bearer", appJwt);
+        using var found = await _http.SendAsync(find, ct);
+        if (!found.IsSuccessStatusCode)
+            throw new InvalidOperationException($"GitHub App is not installed in '{org}' ({(int)found.StatusCode}): {await found.Content.ReadAsStringAsync(ct)}");
+        var installationId = (JsonNode.Parse(await found.Content.ReadAsStringAsync(ct)) as JsonObject)?["id"]?.GetValue<long>();
+
+        using var create = new HttpRequestMessage(HttpMethod.Post, $"https://api.github.com/app/installations/{installationId}/access_tokens");
+        create.Headers.Authorization = new AuthenticationHeaderValue("Bearer", appJwt);
+        using var created = await _http.SendAsync(create, ct);
+        if (!created.IsSuccessStatusCode)
+            throw new InvalidOperationException($"GitHub rejected the installation token ({(int)created.StatusCode}): {await created.Content.ReadAsStringAsync(ct)}");
+        return (JsonNode.Parse(await created.Content.ReadAsStringAsync(ct)) as JsonObject)?["token"]?.GetValue<string>()
+               ?? throw new InvalidOperationException("installation token missing in the response");
     }
 
     /// <summary>Objeto da organização (<c>GET /orgs/{org}</c>); vazio quando não há acesso.</summary>

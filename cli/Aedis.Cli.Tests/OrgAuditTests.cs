@@ -9,6 +9,7 @@ using Xunit;
 namespace Aedis.Cli.Tests;
 
 /// <summary>Avaliação por repositório, montagem do ruleset por nível e o comando ponta-a-ponta contra uma API simulada.</summary>
+[Collection("console")]
 public sealed class OrgAuditTests
 {
     private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));
@@ -257,7 +258,8 @@ public sealed class OrgAuditTests
         repos.Should().HaveCount(2, "forks ficam de fora");
         repos.First(r => r!["name"]!.GetValue<string>() == "bom")!["levelAchieved"]!.GetValue<int>().Should().Be(3);
         repos.First(r => r!["name"]!.GetValue<string>() == "vazio")!["levelAchieved"]!.GetValue<int>().Should().Be(0);
-        fake.Writes.Where(w => w.Url.Contains("/repos/")).Should().HaveCount(2).And.AllSatisfy(w => w.Method.Should().Be(HttpMethod.Post));
+        fake.Writes.Where(w => w.Url.Contains("/repos/") && w.Method == HttpMethod.Post).Should().HaveCount(2);
+        fake.Writes.Where(w => w.Method == HttpMethod.Patch && w.Url.EndsWith("/repos/acme/bom")).Should().ContainSingle().Which.Body.Should().Contain("allow_auto_merge");
         fake.Writes.First(w => w.Url.Contains("/bom/")).Body.Should().Contain("ci / build").And.NotContain("Scorecard").And.NotContain("ci / lint");
         fake.Writes.Should().ContainSingle(w => w.Method == HttpMethod.Put && w.Url.EndsWith("/orgs/acme/rulesets/7")).Which.Body.Should().Contain("~ALL").And.NotContain("required_status_checks");
         fake.Writes.Should().ContainSingle(w => w.Method == HttpMethod.Patch && w.Url.EndsWith("/orgs/acme")).Which.Body.Should().Contain("secret_scanning_push_protection_enabled_for_new_repositories");

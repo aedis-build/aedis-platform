@@ -1,0 +1,68 @@
+# Workflow reutilizável: portão de merge. Avalia a PR do head informado contra .github/aedis-merge-policy.yaml
+# (lida do branch padrão) e, se tudo passa, aprova como a GitHub App "Aedis Platform" e habilita o auto-merge.
+# Chame-o de um workflow `workflow_run` (roda sempre a partir do branch padrão); este job NUNCA faz checkout do
+# código da PR — só a CLI da plataforma, que lê metadados, checks e sumários pela API.
+name: merge-gate
+
+on:
+  workflow_call:
+    inputs:
+      head-sha:
+        description: Head commit da run que terminou (github.event.workflow_run.head_sha)
+        type: string
+        required: true
+      approve:
+        description: Aprovar e habilitar auto-merge quando a decisão for approve (precisa dos secrets da App)
+        type: boolean
+        default: true
+      platform-ref:
+        type: string
+        default: v1
+    secrets:
+      app-id:
+        required: false
+      app-private-key:
+        required: false
+
+permissions: {}
+
+jobs:
+  gate:
+    name: Merge gate
+    runs-on: ubuntu-latest
+    concurrency:
+      group: merge-gate-${{ inputs.head-sha }}
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      actions: read
+    steps:
+      - name: CLI do aedis-platform (nunca o código da PR)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aedis-build/aedis-platform
+          ref: ${{ inputs.platform-ref }}
+          path: .aedis-platform
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Avaliar e, se couber, aprovar
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          AEDIS_APP_ID: ${{ secrets.app-id }}
+          AEDIS_APP_PRIVATE_KEY: ${{ secrets.app-private-key }}
+          HEAD_SHA: ${{ inputs.head-sha }}
+          APPROVE: ${{ inputs.approve }}
+        run: |
+          set -euo pipefail
+          dotnet run --project .aedis-platform/cli/Aedis.Cli -c Release -- pr gate \
+            --org "$GITHUB_REPOSITORY_OWNER" --repo "${GITHUB_REPOSITORY#*/}" --head-sha "$HEAD_SHA" --approve "$APPROVE" --out gate
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: merge-gate-summary
+          path: gate/merge-gate-summary.json
+          if-no-files-found: ignore
