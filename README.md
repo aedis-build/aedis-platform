@@ -1,7 +1,7 @@
 # Aedis Platform
 
 Plataforma de entrega **segura e agnóstica de nuvem** (AWS, Azure, DigitalOcean, qualquer Kubernetes) para
-aplicações construídas com o framework [Aedis](https://github.com/aedis-build/aedis): um chart com baseline
+aplicações construídas com o framework [Aedis](https://github.com/aedis-build/aedis-dotnet): um chart com baseline
 de segurança sempre ligado, GitOps com ArgoCD e Argo Rollouts, segredos pelo External Secrets Operator,
 gates de supply chain e uma régua de conformidade mensurável (OpenSSF Scorecard, OpenSSF Best Practices,
 cobertura de código) em três níveis.

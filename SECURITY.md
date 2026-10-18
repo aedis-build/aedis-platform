@@ -24,7 +24,7 @@ Compromissos:
 - Políticas `policies/`, ruleset `semgrep/`, workflows reutilizáveis `.github/workflows/`.
 - CLI `cli/` e scripts `scripts/`.
 
-Vulnerabilidades no framework Aedis (`aedis-build/aedis`) seguem a política daquele repositório.
+Vulnerabilidades no framework Aedis (`aedis-build/aedis-dotnet`) seguem a política daquele repositório.
 
 ## Práticas deste repositório
 
