@@ -53,14 +53,14 @@ permissions: {}
 jobs:
   commits:
     if: github.event_name == 'pull_request'
-    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@v1
+    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
     permissions:
       contents: read
     with:
       platform-ref: ${{ inputs.platform-ref }}
 
   coverage:
-    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@v1
+    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
     permissions:
       contents: read
       packages: read
@@ -72,7 +72,7 @@ jobs:
       platform-ref: ${{ inputs.platform-ref }}
 
   sast:
-    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@v1
+    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
     permissions:
       contents: read
       security-events: write
@@ -101,7 +101,7 @@ jobs:
   image:
     if: inputs.image != '' && startsWith(github.ref, 'refs/tags/v')
     needs: [coverage, sast]
-    uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@v1
+    uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
     permissions:
       contents: read
       packages: write
