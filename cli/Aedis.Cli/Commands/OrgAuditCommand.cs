@@ -21,7 +21,7 @@ public static class OrgAuditCommand
         var repos = new Option<string[]>("--repo") { Description = "Restringe a estes repositórios", AllowMultipleArgumentsPerToken = true };
         var apply = new Option<bool>("--apply") { Description = "Cria/atualiza o ruleset do branch padrão em cada repositório" };
         var approvals = new Option<int?>("--approvals") { Description = "Aprovações exigidas no ruleset (padrão: 0 no L1, 1 no L2/L3)" };
-        var checks = new Option<string[]>("--required-check") { Description = "Contextos de check obrigatórios (padrão: os que passaram no último commit do branch)", AllowMultipleArgumentsPerToken = true };
+        var checks = new Option<string[]>("--required-check") { Description = "Contextos de check obrigatórios no ruleset; exigido com --apply (só use checks que rodam em toda PR, sem filtro de paths)", AllowMultipleArgumentsPerToken = true };
         var noBypass = new Option<bool>("--no-admin-bypass") { Description = "Não permite que administradores contornem o ruleset via PR" };
         var output = new Option<string>("--out") { Description = "Diretório do relatório", DefaultValueFactory = _ => "." };
         var token = new Option<string?>("--token") { Description = "Token do GitHub (padrão: GITHUB_TOKEN, GH_TOKEN ou `gh auth token`)" };
@@ -38,15 +38,20 @@ public static class OrgAuditCommand
             Directory.CreateDirectory(outDir);
 
             var audits = new List<RepoAudit>();
+            var missingChecks = false;
             foreach (var (name, branch) in await api.ListRepositoriesAsync(parse.GetValue(org)!, cancellationToken)) {
                 if (only.Length > 0 && !only.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
                 if (only.Length == 0 && name == ".github") continue; // repositório de perfil da organização, sem código
                 var snapshot = await SnapshotAsync(api, parse.GetValue(org)!, name, branch, cancellationToken);
                 var audit = RepoAuditor.Evaluate(snapshot, targetLevel, Directory.GetCurrentDirectory());
-                if (parse.GetValue(apply)) {
-                    var required = parse.GetValue(checks) is { Length: > 0 } given
-                        ? given
-                        : RulesetGuardrail.DefaultRequiredChecks(await api.GetSuccessfulCheckNamesAsync(parse.GetValue(org)!, name, branch, cancellationToken));
+                if (parse.GetValue(apply) && parse.GetValue(checks) is not { Length: > 0 }) {
+                    // Derivar da lista de checks verdes em main já exigiu um job filtrado por paths e travou o repositório: a escolha é do operador.
+                    missingChecks = true;
+                    Console.Error.WriteLine($"{name}: informe --required-check; checks verdes no último commit de {branch}: " +
+                                            string.Join(" | ", await api.GetSuccessfulCheckNamesAsync(parse.GetValue(org)!, name, branch, cancellationToken)));
+                }
+                else if (parse.GetValue(apply)) {
+                    var required = parse.GetValue(checks)!;
                     var ruleset = RulesetGuardrail.Build(targetLevel, parse.GetValue(approvals) ?? (targetLevel >= 2 ? 1 : 0), required, !parse.GetValue(noBypass));
                     audit.RulesetApplied = await api.UpsertRulesetAsync(parse.GetValue(org)!, name, ruleset, cancellationToken);
                     audit.RequiredChecks = required;
@@ -59,6 +64,7 @@ public static class OrgAuditCommand
                     Console.WriteLine($"        {(item.Status == "fail" ? "[FAIL]" : "[ ?  ]")} {item.Id} {item.Criterion}{(string.IsNullOrEmpty(item.Detail) ? "" : " — " + item.Detail)}");
             }
 
+            if (missingChecks) return 2;
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit-summary.json"), ToJson(parse.GetValue(org)!, targetLevel, audits), cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit.md"), ToMarkdown(parse.GetValue(org)!, targetLevel, audits), cancellationToken);
             var ok = audits.Count > 0 && audits.All(a => a.LevelAchieved >= targetLevel);

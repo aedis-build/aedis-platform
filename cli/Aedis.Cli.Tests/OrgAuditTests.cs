@@ -117,7 +117,6 @@ public sealed class OrgAuditTests
         pr["require_code_owner_review"]!.GetValue<bool>().Should().BeTrue();
         pr["required_approving_review_count"]!.GetValue<int>().Should().Be(1);
         l3["bypass_actors"]!.AsArray().Should().BeEmpty();
-        RulesetGuardrail.DefaultRequiredChecks(["b / x", "OpenSSF Scorecard", "a / y", "mirror-images / m", "a / y"]).Should().Equal("a / y", "b / x");
     }
 
     /// <summary>API do GitHub e do Scorecard simuladas em memória: um repositório completo e um vazio.</summary>
@@ -161,7 +160,7 @@ public sealed class OrgAuditTests
         var outDir = Path.Combine(Path.GetTempPath(), "aedis-org-" + Guid.NewGuid().ToString("N"));
         var root = new System.CommandLine.RootCommand { OrgAuditCommand.Create(() => fake) };
 
-        var exit = await root.Parse(["audit", "--org", "acme", "--level", "3", "--apply", "--out", outDir, "--token", "t"]).InvokeAsync();
+        var exit = await root.Parse(["audit", "--org", "acme", "--level", "3", "--apply", "--required-check", "ci / build", "--out", outDir, "--token", "t"]).InvokeAsync();
 
         exit.Should().Be(1, "o repositório vazio não alcança o L3");
         var json = JsonNode.Parse(await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit-summary.json")))!;
@@ -172,5 +171,19 @@ public sealed class OrgAuditTests
         fake.Writes.Should().HaveCount(2).And.AllSatisfy(w => w.Method.Should().Be(HttpMethod.Post));
         fake.Writes.First(w => w.Url.Contains("/bom/")).Body.Should().Contain("ci / build").And.NotContain("Scorecard").And.NotContain("ci / lint");
         (await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.md"))).Should().Contain("| bom | L3 |").And.Contain("| vazio | L0 |");
+    }
+
+    [Fact]
+    public async Task Apply_sem_required_check_nao_escreve_nada_e_lista_os_checks_verdes() {
+        var fake = new FakeGitHub();
+        var stderr = new StringWriter();
+        Console.SetError(stderr);
+        var root = new System.CommandLine.RootCommand { OrgAuditCommand.Create(() => fake) };
+
+        var exit = await root.Parse(["audit", "--org", "acme", "--repo", "bom", "--apply", "--out", Path.GetTempPath(), "--token", "t"]).InvokeAsync();
+
+        exit.Should().Be(2);
+        fake.Writes.Should().BeEmpty();
+        stderr.ToString().Should().Contain("--required-check").And.Contain("ci / build");
     }
 }

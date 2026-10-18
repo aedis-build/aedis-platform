@@ -59,14 +59,4 @@ public static class RulesetGuardrail
         };
     }
 
-    /// <summary>
-    ///     Checks que viram obrigatórios quando o chamador não os informa: os que passaram no último commit do
-    ///     branch padrão, menos os informativos (Scorecard, espelhos de imagem).
-    /// </summary>
-    public static IReadOnlyList<string> DefaultRequiredChecks(IEnumerable<string> successfulChecks) =>
-        successfulChecks
-            .Where(c => !c.Contains("Scorecard", StringComparison.OrdinalIgnoreCase) && !c.Contains("mirror", StringComparison.OrdinalIgnoreCase))
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(c => c, StringComparer.Ordinal)
-            .ToList();
 }

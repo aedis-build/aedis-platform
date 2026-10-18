@@ -78,5 +78,6 @@ aedis org audit --org minha-org --level 3 --apply --required-check "ci / build"
 ```
 
 Autenticação: `GITHUB_TOKEN`/`GH_TOKEN` ou a sessão do `gh`. Com `--apply`, o token precisa de administração
-dos repositórios. Por padrão o papel de administrador pode contornar o ruleset via PR (fica auditável); use
+dos repositórios e `--required-check` é obrigatório: informe só checks que rodam em toda PR (um job com filtro de
+`paths` como check obrigatório trava o branch); sem a opção o comando lista os checks verdes de cada repositório e sai com 2. Por padrão o papel de administrador pode contornar o ruleset via PR (fica auditável); use
 `--no-admin-bypass` quando houver dois ou mais mantenedores.
