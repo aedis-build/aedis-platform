@@ -73,7 +73,7 @@ public sealed class OrgAuditTests
 
         audit.Items.Where(i => i.Status == "fail").Should().BeEmpty();
         audit.LevelAchieved.Should().Be(3);
-        audit.Items.Where(i => i.Status == "manual").Select(i => i.Id).Should().Contain(["BP-14", "BP-21", "BP-25"]);
+        audit.Items.Where(i => i.Status == "manual").Select(i => i.Id).Should().Contain(["BP-21", "BP-25"]);
     }
 
     [Fact]
@@ -81,7 +81,7 @@ public sealed class OrgAuditTests
         var audit = RepoAuditor.Evaluate(Snapshot(3), 3, Root);
 
         audit.LevelAchieved.Should().Be(1);
-        audit.Items.Should().Contain(i => i.Id == "SC-L2" && i.Status == "fail" && i.Detail.Contains("não publicado"));
+        audit.Items.Should().Contain(i => i.Id == "SC-L2" && i.Status == "fail" && i.Detail.Contains("not published"));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class OrgAuditTests
 
         audit.LevelAchieved.Should().Be(1);
         audit.Items.Should().Contain(i => i.Id == "BP-12" && i.Status == "fail" && i.Detail.Contains("actions/checkout@v4"));
-        audit.Items.Should().Contain(i => i.Id == "BP-07-L2" && i.Status == "fail" && i.Detail.Contains("histórico não linear"));
+        audit.Items.Should().Contain(i => i.Id == "BP-07-L2" && i.Status == "fail" && i.Detail.Contains("non-linear history"));
         audit.Items.Should().Contain(i => i.Id == "BP-07-L3" && i.Status == "fail" && i.Detail.Contains("code owner"));
     }
 
@@ -119,7 +119,39 @@ public sealed class OrgAuditTests
         l3["bypass_actors"]!.AsArray().Should().BeEmpty();
     }
 
-    /// <summary>API do GitHub e do Scorecard simuladas em memória: um repositório completo e um vazio.</summary>
+    private const string OrgJson = """
+        {"login":"acme","two_factor_requirement_enabled":true,"members_can_create_public_repositories":false,
+         "dependabot_alerts_enabled_for_new_repositories":true,"dependabot_security_updates_enabled_for_new_repositories":true,
+         "secret_scanning_enabled_for_new_repositories":true,"secret_scanning_push_protection_enabled_for_new_repositories":true}
+        """;
+
+    [Fact]
+    public void Organizacao_configurada_alcanca_L3_e_vazia_fica_no_L0() {
+        var full = new OrgSnapshot {
+            Name = "acme",
+            Organization = JsonNode.Parse(OrgJson)!.AsObject(),
+            WorkflowPermissions = new JsonObject { ["default_workflow_permissions"] = "read", ["can_approve_pull_request_reviews"] = false },
+            Rulesets = [new JsonObject { ["name"] = "aedis-main", ["enforcement"] = "active" }]
+        };
+
+        RepoAuditor.EvaluateOrganization(full, 3, Root).LevelAchieved.Should().Be(3);
+        var empty = RepoAuditor.EvaluateOrganization(new OrgSnapshot { Name = "acme" }, 3, Root);
+        empty.LevelAchieved.Should().Be(0);
+        empty.Items.Should().Contain(i => i.Id == "ORG-01" && i.Status == "fail" && i.Detail.Contains("expected read"));
+        empty.Items.Should().Contain(i => i.Id == "ORG-06" && i.Status == "fail");
+    }
+
+    [Fact]
+    public void Ruleset_de_organizacao_vale_para_todos_os_repositorios_sem_checks() {
+        var ruleset = RulesetGuardrail.Build(3, 1, [], true, allRepositories: true);
+
+        ruleset["conditions"]!["repository_name"]!["include"]!.AsArray().Select(x => x!.GetValue<string>()).Should().Equal("~ALL");
+        ruleset["rules"]!.AsArray().Should().NotContain(r => r!["type"]!.GetValue<string>() == "required_status_checks");
+        RulesetGuardrail.OrganizationSettings(1).ContainsKey("secret_scanning_enabled_for_new_repositories").Should().BeFalse();
+        RulesetGuardrail.OrganizationSettings(3)["members_can_create_public_repositories"]!.GetValue<bool>().Should().BeFalse();
+    }
+
+    /// <summary>API do GitHub e do Scorecard simuladas em memória: a organização, um repositório completo e um vazio.</summary>
     private sealed class FakeGitHub : HttpMessageHandler
     {
         public List<(HttpMethod Method, string Url, string Body)> Writes { get; } = [];
@@ -132,6 +164,9 @@ public sealed class OrgAuditTests
             }
 
             if (url.Contains("/orgs/acme/repos")) return Json("""[{"name":"bom","default_branch":"main"},{"name":"vazio","default_branch":"main"},{"name":"fork","default_branch":"main","fork":true}]""");
+            if (url.EndsWith("/orgs/acme")) return Json(OrgJson);
+            if (url.EndsWith("/orgs/acme/actions/permissions/workflow")) return Json("""{"default_workflow_permissions":"read","can_approve_pull_request_reviews":false}""");
+            if (url.EndsWith("/orgs/acme/rulesets")) return Json("""[{"id":7,"name":"aedis-main","enforcement":"active"}]""");
             if (url.Contains("/repos/acme/bom/contents/.github/workflows/ci.yml")) return File(PinnedWorkflow);
             if (url.Contains("/repos/acme/bom/contents/.github/workflows")) return Json("""[{"name":"ci.yml","type":"file"}]""");
             if (url.Contains("/repos/acme/bom/contents/")) return File("conteudo");
@@ -168,12 +203,17 @@ public sealed class OrgAuditTests
         repos.Should().HaveCount(2, "forks ficam de fora");
         repos.First(r => r!["name"]!.GetValue<string>() == "bom")!["levelAchieved"]!.GetValue<int>().Should().Be(3);
         repos.First(r => r!["name"]!.GetValue<string>() == "vazio")!["levelAchieved"]!.GetValue<int>().Should().Be(0);
-        fake.Writes.Should().HaveCount(2).And.AllSatisfy(w => w.Method.Should().Be(HttpMethod.Post));
+        fake.Writes.Where(w => w.Url.Contains("/repos/")).Should().HaveCount(2).And.AllSatisfy(w => w.Method.Should().Be(HttpMethod.Post));
         fake.Writes.First(w => w.Url.Contains("/bom/")).Body.Should().Contain("ci / build").And.NotContain("Scorecard").And.NotContain("ci / lint");
+        fake.Writes.Should().ContainSingle(w => w.Method == HttpMethod.Put && w.Url.EndsWith("/orgs/acme/rulesets/7")).Which.Body.Should().Contain("~ALL").And.NotContain("required_status_checks");
+        fake.Writes.Should().ContainSingle(w => w.Method == HttpMethod.Patch && w.Url.EndsWith("/orgs/acme")).Which.Body.Should().Contain("secret_scanning_push_protection_enabled_for_new_repositories");
+        fake.Writes.Should().ContainSingle(w => w.Method == HttpMethod.Put && w.Url.EndsWith("/actions/permissions/workflow"));
+        json["organization"]!["levelAchieved"]!.GetValue<int>().Should().Be(3);
+        json["organization"]!["applied"]!.AsArray().Should().HaveCount(3);
         (await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.md"))).Should().Contain("| bom | L3 |").And.Contain("| vazio | L0 |");
         var html = await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.html"));
         html.Should().StartWith("<!doctype html>").And.Contain("id=\"bom\"").And.Contain("id=\"vazio\"")
-            .And.Contain("BP-01").And.Contain("OpenSSF Scorecard").And.Contain("ci / build");
+            .And.Contain("BP-01").And.Contain("ORG-01").And.Contain("OpenSSF Scorecard").And.Contain("ci / build");
     }
 
     [Fact]

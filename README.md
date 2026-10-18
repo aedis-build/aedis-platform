@@ -67,11 +67,16 @@ Apache-2.0. Veja [LICENSE](LICENSE) e [SECURITY.md](SECURITY.md).
 
 ## Auditoria da organização (`aedis org audit`)
 
-Aplica a régua de conformidade aos repositórios de uma organização GitHub: critérios do selo OpenSSF Best
-Practices por tier (`conformance/best-practices.yaml`), proteção viva do branch padrão e mínimos do OpenSSF
-Scorecard (`conformance/levels.yaml`). Gera `org-audit-summary.json` (schema `aedis.platform/org-audit/v1`),
-`org-audit.md` e `org-audit.html` (relatório autocontido com todos os critérios por repositório, checks obrigatórios e
-notas do Scorecard por check), e com `--apply` cria/atualiza o ruleset `aedis-main` no nível pedido.
+Aplica a régua de conformidade a uma organização GitHub e aos seus repositórios: critérios do selo OpenSSF Best
+Practices por tier (`conformance/best-practices.yaml`), controles da organização (seção `organization` do mesmo
+arquivo: permissões do Actions, 2FA, Dependabot/secret scanning para repositórios novos, ruleset de organização),
+proteção viva do branch padrão e mínimos do OpenSSF Scorecard (`conformance/levels.yaml`). Gera, em inglês,
+`org-audit-summary.json` (schema `aedis.platform/org-audit/v1`), `org-audit.md` e `org-audit.html` (relatório
+autocontido no estilo dos scanners, com a organização, todos os critérios por repositório, checks obrigatórios e notas
+do Scorecard por check). Com `--apply` aplica os guardrails do nível em toda a organização de uma vez: ruleset de
+organização `aedis-main` para o branch padrão de todos os repositórios, permissões de workflow do Actions (token só
+leitura, sem aprovar PRs), configurações de segurança da org e o ruleset de cada repositório com os checks informados.
+2FA não tem API de escrita e segue como item a ligar na UI da organização.
 
 ```bash
 aedis org audit --org minha-org --level 3 --out ./auditoria

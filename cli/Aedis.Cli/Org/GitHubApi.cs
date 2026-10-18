@@ -91,17 +91,51 @@ public sealed class GitHubApi
             .Select(r => r["name"]!.GetValue<string>()).Distinct(StringComparer.Ordinal).ToList() ?? [];
     }
 
-    /// <summary>Cria o ruleset ou atualiza o de mesmo nome. Devolve "created" ou "updated".</summary>
-    public async Task<string> UpsertRulesetAsync(string org, string repo, JsonObject ruleset, CancellationToken ct) {
-        var existing = await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/rulesets", ct) ?? [];
+    /// <summary>Cria o ruleset do repositório ou atualiza o de mesmo nome. Devolve "created" ou "updated".</summary>
+    public Task<string> UpsertRulesetAsync(string org, string repo, JsonObject ruleset, CancellationToken ct) =>
+        UpsertRulesetAsync($"https://api.github.com/repos/{org}/{repo}/rulesets", ruleset, ct);
+
+    /// <summary>Cria o ruleset da organização ou atualiza o de mesmo nome. Devolve "created" ou "updated".</summary>
+    public Task<string> UpsertOrganizationRulesetAsync(string org, JsonObject ruleset, CancellationToken ct) =>
+        UpsertRulesetAsync($"https://api.github.com/orgs/{org}/rulesets", ruleset, ct);
+
+    private async Task<string> UpsertRulesetAsync(string rulesetsUrl, JsonObject ruleset, CancellationToken ct) {
+        var existing = await GetJsonAsync<JsonArray>(rulesetsUrl, ct) ?? [];
         var name = ruleset["name"]!.GetValue<string>();
         var match = existing.OfType<JsonObject>().FirstOrDefault(r => r["name"]?.GetValue<string>() == name);
         using var response = match is null
-            ? await _http.PostAsJsonAsync($"https://api.github.com/repos/{org}/{repo}/rulesets", ruleset, ct)
-            : await _http.PutAsJsonAsync($"https://api.github.com/repos/{org}/{repo}/rulesets/{match["id"]!.GetValue<long>()}", ruleset, ct);
+            ? await _http.PostAsJsonAsync(rulesetsUrl, ruleset, ct)
+            : await _http.PutAsJsonAsync($"{rulesetsUrl}/{match["id"]!.GetValue<long>()}", ruleset, ct);
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"GitHub recusou o ruleset em {org}/{repo} ({(int)response.StatusCode}): {await response.Content.ReadAsStringAsync(ct)}");
+            throw new InvalidOperationException($"GitHub rejected the ruleset at {rulesetsUrl} ({(int)response.StatusCode}): {await response.Content.ReadAsStringAsync(ct)}");
         return match is null ? "created" : "updated";
+    }
+
+    /// <summary>Objeto da organização (<c>GET /orgs/{org}</c>); vazio quando não há acesso.</summary>
+    public async Task<JsonObject> GetOrganizationAsync(string org, CancellationToken ct) =>
+        await GetJsonAsync<JsonObject>($"https://api.github.com/orgs/{org}", ct) ?? new JsonObject();
+
+    /// <summary>Permissões padrão de workflow do Actions na organização.</summary>
+    public async Task<JsonObject> GetWorkflowPermissionsAsync(string org, CancellationToken ct) =>
+        await GetJsonAsync<JsonObject>($"https://api.github.com/orgs/{org}/actions/permissions/workflow", ct) ?? new JsonObject();
+
+    /// <summary>Rulesets da organização.</summary>
+    public async Task<JsonArray> ListOrganizationRulesetsAsync(string org, CancellationToken ct) =>
+        await GetJsonAsync<JsonArray>($"https://api.github.com/orgs/{org}/rulesets", ct) ?? [];
+
+    /// <summary>Altera configurações da organização (<c>PATCH /orgs/{org}</c>).</summary>
+    public Task PatchOrganizationAsync(string org, JsonObject settings, CancellationToken ct) =>
+        SendAsync(HttpMethod.Patch, $"https://api.github.com/orgs/{org}", settings, ct);
+
+    /// <summary>Define as permissões padrão de workflow do Actions na organização.</summary>
+    public Task PutWorkflowPermissionsAsync(string org, JsonObject permissions, CancellationToken ct) =>
+        SendAsync(HttpMethod.Put, $"https://api.github.com/orgs/{org}/actions/permissions/workflow", permissions, ct);
+
+    private async Task SendAsync(HttpMethod method, string url, JsonObject body, CancellationToken ct) {
+        using var request = new HttpRequestMessage(method, url) { Content = JsonContent.Create(body) };
+        using var response = await _http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+            throw new InvalidOperationException($"GitHub rejected {method} {url} ({(int)response.StatusCode}): {await response.Content.ReadAsStringAsync(ct)}");
     }
 
     /// <summary>Resultado publicado do OpenSSF Scorecard; nulo quando o projeto não publica.</summary>
