@@ -9,6 +9,7 @@ using Xunit;
 namespace Aedis.Cli.Tests;
 
 /// <summary>Avaliação por repositório, montagem do ruleset por nível e o comando ponta-a-ponta contra uma API simulada.</summary>
+[Collection("console")]
 public sealed class OrgAuditTests
 {
     private static readonly string Root = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", ".."));

@@ -10,6 +10,7 @@ using Xunit;
 namespace Aedis.Cli.Tests;
 
 /// <summary>Portão de merge: avaliação pura da política, JWT da App e o comando ponta-a-ponta contra uma API simulada.</summary>
+[Collection("console")]
 public sealed class MergeGateTests
 {
     private const string Policy = """
