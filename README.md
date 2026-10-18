@@ -15,7 +15,8 @@ cobertura de código) em três níveis.
 | `charts/aedis-app` | Chart Helm para `api`, `worker` e `cronjob`: Rollout canário com análise, ExternalSecret por cofre, identidade de workload (IRSA / Azure Workload Identity), KEDA/HPA, PDB, NetworkPolicy anti-SSRF, presets de ingress (nginx, ALB, AGIC, Kong) e de observabilidade (Datadog, Dynatrace, Splunk, New Relic), tudo opcional e desligado por padrão |
 | `template/tenant` | Esqueleto do repositório GitOps do cliente (`platform/values`, `apps/`, ApplicationSet, workflows) |
 | `scripts/` | `validate-apps.sh` (render + schema + kubeconform + sumário JSON), `render-tenant-template.sh` |
-| `.github/workflows` | Workflows reutilizáveis (`validate.yml`; em seguida `build-image`, `sast`, `dast`, `promote`, `scorecard`, `coverage`) |
+| `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `app-ci`; em seguida `promote`) |
+| `.github/actions/dast` | Ação composta: ZAP baseline contra a URL alvo, sumário `dast-summary/v1` e gate com aceites de risco com validade |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |
 | `docs/` | Guias por nuvem, referência do chart, controles de segurança e níveis de conformidade |
 

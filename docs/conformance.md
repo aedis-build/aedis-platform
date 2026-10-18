@@ -29,7 +29,7 @@ Os limiares vivem em `conformance/levels.yaml`; um tenant pode subi-los, nunca b
 | PLT-11 | Canário com análise automática | `rollout.yaml` | NIST DE.CM |
 | PLT-12 | Proxies e hosts confiáveis fixados no app | `_env.tpl` | OWASP A05 |
 | PLT-13 | SAST no código (Semgrep + regras Aedis) | `sast.yml` | OWASP A03, NIST SSDF PW.7 |
-| PLT-14 | DAST na superfície exposta | `dast.yml` | OWASP Top 10, NIST SSDF PW.8 |
+| PLT-14 | DAST na superfície exposta | `.github/actions/dast` | OWASP Top 10, NIST SSDF PW.8 |
 | PLT-15 | Varredura contínua das imagens em uso | `image-scan.yml` | NIST SSDF PW.4, RV.1 |
 | PLT-16 | Detecção de drift em prod | `drift-report.yml` | NIST DE.CM |
 
