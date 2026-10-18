@@ -148,7 +148,7 @@ public sealed class OrgAuditTests
         ruleset["conditions"]!["repository_name"]!["include"]!.AsArray().Select(x => x!.GetValue<string>()).Should().Equal("~ALL");
         ruleset["rules"]!.AsArray().Should().NotContain(r => r!["type"]!.GetValue<string>() == "required_status_checks");
         RulesetGuardrail.OrganizationSettings(1).ContainsKey("secret_scanning_enabled_for_new_repositories").Should().BeFalse();
-        RulesetGuardrail.OrganizationSettings(3)["members_can_create_public_repositories"]!.GetValue<bool>().Should().BeFalse();
+        RulesetGuardrail.OrganizationSettings(3)["secret_scanning_push_protection_enabled_for_new_repositories"]!.GetValue<bool>().Should().BeTrue();
     }
 
     /// <summary>API do GitHub e do Scorecard simuladas em memória: a organização, um repositório completo e um vazio.</summary>

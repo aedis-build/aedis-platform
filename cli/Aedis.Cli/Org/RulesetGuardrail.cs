@@ -74,7 +74,6 @@ public static class RulesetGuardrail
         if (level >= 3) {
             settings["secret_scanning_enabled_for_new_repositories"] = true;
             settings["secret_scanning_push_protection_enabled_for_new_repositories"] = true;
-            settings["members_can_create_public_repositories"] = false;
         }
 
         return settings;

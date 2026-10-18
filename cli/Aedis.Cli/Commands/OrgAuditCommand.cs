@@ -73,17 +73,21 @@ public static class OrgAuditCommand
             if (missingChecks) return 2;
 
             var applied = new List<string>();
-            if (parse.GetValue(apply))
-                try {
-                    applied.Add($"organization ruleset {await api.UpsertOrganizationRulesetAsync(orgName, RulesetGuardrail.Build(targetLevel, requiredApprovals, [], adminBypass, allRepositories: true), cancellationToken)}");
-                    await api.PutWorkflowPermissionsAsync(orgName, RulesetGuardrail.WorkflowPermissions(), cancellationToken);
-                    applied.Add("actions workflow permissions");
-                    await api.PatchOrganizationAsync(orgName, RulesetGuardrail.OrganizationSettings(targetLevel), cancellationToken);
-                    applied.Add("organization security settings");
+            if (parse.GetValue(apply)) {
+                // Cada guardrail de organização é independente: um 403 (ex.: rulesets de org fora do plano Free) não impede os demais.
+                async Task Try(string label, Func<Task<string>> action) {
+                    try {
+                        applied.Add($"{label} {await action()}".TrimEnd());
+                    }
+                    catch (InvalidOperationException ex) {
+                        Console.Error.WriteLine($"{orgName}: {label}: {ex.Message}");
+                    }
                 }
-                catch (InvalidOperationException ex) {
-                    Console.Error.WriteLine($"{orgName}: {ex.Message}");
-                }
+
+                await Try("actions workflow permissions", async () => { await api.PutWorkflowPermissionsAsync(orgName, RulesetGuardrail.WorkflowPermissions(), cancellationToken); return ""; });
+                await Try("organization security settings", async () => { await api.PatchOrganizationAsync(orgName, RulesetGuardrail.OrganizationSettings(targetLevel), cancellationToken); return ""; });
+                await Try("organization ruleset", () => api.UpsertOrganizationRulesetAsync(orgName, RulesetGuardrail.Build(targetLevel, requiredApprovals, [], adminBypass, allRepositories: true), cancellationToken));
+            }
 
             var orgAudit = RepoAuditor.EvaluateOrganization(await SnapshotOrganizationAsync(api, orgName, cancellationToken), targetLevel, Directory.GetCurrentDirectory());
             orgAudit.Applied.AddRange(applied);

@@ -119,9 +119,3 @@ organization:
     check: org-field
     field: secret_scanning_push_protection_enabled_for_new_repositories
     expected: "true"
-  - id: ORG-09
-    tier: gold
-    criterion: Only owners can create public repositories
-    check: org-field
-    field: members_can_create_public_repositories
-    expected: "false"

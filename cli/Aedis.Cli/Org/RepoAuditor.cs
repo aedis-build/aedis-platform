@@ -37,8 +37,8 @@ public sealed class OrgSnapshot
     public JsonObject Organization { get; init; } = new();
     /// <summary><c>GET /orgs/{org}/actions/permissions/workflow</c>.</summary>
     public JsonObject WorkflowPermissions { get; init; } = new();
-    /// <summary><c>GET /orgs/{org}/rulesets</c>.</summary>
-    public JsonArray Rulesets { get; init; } = [];
+    /// <summary><c>GET /orgs/{org}/rulesets</c>; nulo quando o plano do GitHub não oferece rulesets de organização.</summary>
+    public JsonArray? Rulesets { get; init; } = [];
 }
 
 /// <summary>Um critério avaliado: <c>pass</c>, <c>fail</c> ou <c>manual</c>.</summary>
@@ -158,6 +158,8 @@ public static partial class RepoAuditor
                 return new AuditItem(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : $"{def.Field} is {actual}, expected {def.Expected}");
             }
             case "org-ruleset": {
+                if (org.Rulesets is null)
+                    return new AuditItem(def.Id, tier, def.Criterion, "fail", "organization rulesets are not available on this GitHub plan (requires GitHub Team); repository rulesets are applied instead");
                 var ok = org.Rulesets.OfType<JsonObject>().Any(r =>
                     r["name"]?.GetValue<string>() == RulesetGuardrail.Name && r["enforcement"]?.GetValue<string>() == "active");
                 return new AuditItem(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : $"no active organization ruleset named '{RulesetGuardrail.Name}'");

@@ -119,9 +119,9 @@ public sealed class GitHubApi
     public async Task<JsonObject> GetWorkflowPermissionsAsync(string org, CancellationToken ct) =>
         await GetJsonAsync<JsonObject>($"https://api.github.com/orgs/{org}/actions/permissions/workflow", ct) ?? new JsonObject();
 
-    /// <summary>Rulesets da organização.</summary>
-    public async Task<JsonArray> ListOrganizationRulesetsAsync(string org, CancellationToken ct) =>
-        await GetJsonAsync<JsonArray>($"https://api.github.com/orgs/{org}/rulesets", ct) ?? [];
+    /// <summary>Rulesets da organização; nulo quando o plano do GitHub não oferece rulesets de organização (403 no plano Free).</summary>
+    public Task<JsonArray?> ListOrganizationRulesetsAsync(string org, CancellationToken ct) =>
+        GetJsonAsync<JsonArray>($"https://api.github.com/orgs/{org}/rulesets", ct, nullOnForbidden: true);
 
     /// <summary>Altera configurações da organização (<c>PATCH /orgs/{org}</c>).</summary>
     public Task PatchOrganizationAsync(string org, JsonObject settings, CancellationToken ct) =>
@@ -148,7 +148,7 @@ public sealed class GitHubApi
         return new ScorecardResult(score.GetValue<double>(), checks);
     }
 
-    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct, bool plainJson = false) where T : JsonNode {
+    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct, bool plainJson = false, bool nullOnForbidden = false) where T : JsonNode {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (plainJson) {
             // A API do Scorecard só aceita application/json e não deve receber o token do GitHub.
@@ -157,7 +157,7 @@ public sealed class GitHubApi
         }
 
         using var response = await _http.SendAsync(request, ct);
-        if (response.StatusCode == HttpStatusCode.NotFound) return null;
+        if (response.StatusCode == HttpStatusCode.NotFound || (nullOnForbidden && response.StatusCode == HttpStatusCode.Forbidden)) return null;
         if (!response.IsSuccessStatusCode)
             throw new InvalidOperationException($"GitHub respondeu {(int)response.StatusCode} em {url}: {await response.Content.ReadAsStringAsync(ct)}");
         var node = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct));
