@@ -1,0 +1,5 @@
+# Aceites de risco do DAST (lidos por .github/actions/dast). Cada aceite expira em `until`; vencido, volta a bloquear.
+accept: []
+# - pluginId: 10038            # id do plugin do ZAP (coluna "pluginid" do relatório)
+#   until: 2026-12-31
+#   reason: CSP é aplicada na borda (WAF); evidência no ticket SEC-123

@@ -123,6 +123,27 @@ jobs:
       contents: read
       security-events: write
 
+  dast:
+    name: DAST (ZAP baseline na imagem de exemplo)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Subir a app de exemplo
+        run: |
+          set -euo pipefail
+          docker build -q -t example-app examples/app
+          docker run -d --rm -p 8080:8080 --name example-app example-app
+          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://localhost:8080/healthz
+      - uses: ./.github/actions/dast
+        with:
+          target-url: http://localhost:8080/
+          accept-file: examples/app/dast-accept.yaml
+      - run: python3 .github/actions/dast/dast-summary.py --self-test
+
   tenant-template:
     name: Template do tenant valida com o chart
     runs-on: ubuntu-latest
