@@ -26,6 +26,15 @@ public sealed class RepoSnapshot
 
     /// <summary>Resultado publicado do Scorecard; nulo quando não publicado.</summary>
     public ScorecardResult? Scorecard { get; init; }
+
+    /// <summary>Nomes dos assets da última release; nulo quando o repositório não tem releases.</summary>
+    public IReadOnlyList<string>? ReleaseAssets { get; init; }
+
+    /// <summary>Nível do selo OpenSSF Best Practices (<c>passing</c>, <c>silver</c>, <c>gold</c>, <c>in_progress</c>); nulo quando não registrado.</summary>
+    public string? BadgeLevel { get; init; }
+
+    /// <summary>Nome do artefato → sumário JSON da run mais recente do branch padrão; nulo quando não há artefato válido.</summary>
+    public Dictionary<string, JsonObject?> Summaries { get; init; } = new(StringComparer.Ordinal);
 }
 
 /// <summary>Configuração viva da organização, já baixada: objeto da org, permissões de workflow do Actions e rulesets de organização.</summary>
@@ -41,8 +50,8 @@ public sealed class OrgSnapshot
     public JsonArray? Rulesets { get; init; } = [];
 }
 
-/// <summary>Um critério avaliado: <c>pass</c>, <c>fail</c> ou <c>manual</c>.</summary>
-public sealed record AuditItem(string Id, string Tier, string Criterion, string Status, string Detail);
+/// <summary>Um critério avaliado: <c>pass</c>, <c>fail</c> ou <c>manual</c>, com os controles do OSPS Baseline que ele cobre.</summary>
+public sealed record AuditItem(string Id, string Tier, string Criterion, string Status, string Detail, IReadOnlyList<string>? Osps = null);
 
 /// <summary>Resultado de um repositório: nível alcançado e itens por critério.</summary>
 public sealed class RepoAudit
@@ -78,18 +87,19 @@ public sealed class OrgAudit
 
 /// <summary>
 ///     Avalia um repositório contra <c>conformance/best-practices.yaml</c> (critérios do selo OpenSSF Best
-///     Practices por tier), as regras vivas do branch padrão e os mínimos de Scorecard de
-///     <c>conformance/levels.yaml</c>; e a organização contra a seção <c>organization</c> do mesmo arquivo
-///     (configurações de org e do Actions, ruleset de organização). Itens <c>manual</c> não bloqueiam o nível,
-///     mas aparecem no relatório. Textos de saída em inglês: o relatório é para a organização e seus auditores.
+///     Practices por tier, com evidência: assets da release, selo registrado, sumários das runs), as regras vivas
+///     do branch padrão e os mínimos de Scorecard de <c>conformance/levels.yaml</c>; e a organização contra a
+///     seção <c>organization</c> do mesmo arquivo. Itens <c>manual</c> não bloqueiam o nível, mas aparecem no
+///     relatório. Textos de saída em inglês: o relatório é para a organização e seus auditores.
 /// </summary>
 public static partial class RepoAuditor
 {
     /// <summary>Caminhos sondados em todo repositório (critérios file-exists mais CODEOWNERS).</summary>
     public static readonly string[] ProbedFiles =
-        ["SECURITY.md", "LICENSE", "CONTRIBUTING.md", ".github/dependabot.yml", ".github/rulesets/main.json", "CODEOWNERS", ".github/CODEOWNERS"];
+        ["SECURITY.md", "LICENSE", "CONTRIBUTING.md", ".github/dependabot.yml", ".github/rulesets/main.json", "CODEOWNERS", ".github/CODEOWNERS", "REUSE.toml"];
 
     private static readonly string[] TierByLevel = ["", "passing", "silver", "gold"];
+    private static readonly Dictionary<string, int> BadgeRank = new(StringComparer.OrdinalIgnoreCase) { ["in_progress"] = 0, ["passing"] = 1, ["silver"] = 2, ["gold"] = 3 };
 
     /// <summary>Avalia o repositório até <paramref name="targetLevel" />; lê best-practices.yaml e levels.yaml de <paramref name="root" /> ou dos recursos embutidos.</summary>
     public static RepoAudit Evaluate(RepoSnapshot repo, int targetLevel, string root) {
@@ -150,37 +160,62 @@ public static partial class RepoAuditor
     }
 
     private static AuditItem EvaluateOrg(PracticeDefinition def, string tier, OrgSnapshot org) {
+        AuditItem Result(bool ok, string detail) => new(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : detail, def.Osps);
         switch (def.Check) {
             case "org-field": {
                 var source = def.Source == "workflow" ? org.WorkflowPermissions : org.Organization;
                 var actual = source[def.Field!]?.ToJsonString().Trim('"') ?? "null";
-                var ok = string.Equals(actual, def.Expected, StringComparison.OrdinalIgnoreCase);
-                return new AuditItem(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : $"{def.Field} is {actual}, expected {def.Expected}");
+                return Result(string.Equals(actual, def.Expected, StringComparison.OrdinalIgnoreCase), $"{def.Field} is {actual}, expected {def.Expected}");
             }
-            case "org-ruleset": {
+            case "org-ruleset":
                 if (org.Rulesets is null)
-                    return new AuditItem(def.Id, tier, def.Criterion, "fail", "organization rulesets are not available on this GitHub plan (requires GitHub Team); repository rulesets are applied instead");
-                var ok = org.Rulesets.OfType<JsonObject>().Any(r =>
-                    r["name"]?.GetValue<string>() == RulesetGuardrail.Name && r["enforcement"]?.GetValue<string>() == "active");
-                return new AuditItem(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : $"no active organization ruleset named '{RulesetGuardrail.Name}'");
-            }
+                    return Result(false, "organization rulesets are not available on this GitHub plan (requires GitHub Team); repository rulesets are applied instead");
+                return Result(org.Rulesets.OfType<JsonObject>().Any(r =>
+                        r["name"]?.GetValue<string>() == RulesetGuardrail.Name && r["enforcement"]?.GetValue<string>() == "active"),
+                    $"no active organization ruleset named '{RulesetGuardrail.Name}'");
             default:
-                return new AuditItem(def.Id, tier, def.Criterion, "manual", "manual verification (organization/process)");
+                return new AuditItem(def.Id, tier, def.Criterion, "manual", def.Note ?? "manual verification (organization/process)", def.Osps);
         }
     }
 
     private static AuditItem Evaluate(PracticeDefinition def, string tier, RepoSnapshot repo) {
-        AuditItem Result(bool ok, string detail) => new(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : detail);
-        return def.Check switch {
-            "file-exists" => Result(repo.Files.ContainsKey(def.Path!) || (def.Path == "CODEOWNERS" && repo.Files.ContainsKey(".github/CODEOWNERS")),
-                $"missing {def.Path}"),
-            "ruleset-as-code" => Result(repo.Files.ContainsKey(def.Path!), $"missing {def.Path} (ruleset versioned in the repository)"),
-            "workflow-exists" => Result(repo.Workflows.Count > 0, "no workflows under .github/workflows"),
-            "workflow-uses" => Result(repo.Workflows.Values.Any(w => Regex.IsMatch(w, def.Pattern!, RegexOptions.IgnoreCase)),
-                $"no workflow matches '{def.Pattern}'"),
-            "actions-pinned-by-sha" => PinnedBySha(def, tier, repo),
-            _ => new AuditItem(def.Id, tier, def.Criterion, "manual", "manual verification (organization/process)")
-        };
+        AuditItem Result(bool ok, string detail) => new(def.Id, tier, def.Criterion, ok ? "pass" : "fail", ok ? "" : detail, def.Osps);
+        bool AnyWorkflow(string pattern) => repo.Workflows.Values.Any(w => Regex.IsMatch(w, pattern, RegexOptions.IgnoreCase));
+        switch (def.Check) {
+            case "file-exists":
+                return Result(repo.Files.ContainsKey(def.Path!) || (def.Path == "CODEOWNERS" && repo.Files.ContainsKey(".github/CODEOWNERS")), $"missing {def.Path}");
+            case "ruleset-as-code":
+                return Result(repo.Files.ContainsKey(def.Path!), $"missing {def.Path} (ruleset versioned in the repository)");
+            case "workflow-exists":
+                return Result(repo.Workflows.Count > 0, "no workflows under .github/workflows");
+            case "workflow-uses":
+                return Result(AnyWorkflow(def.Pattern!), $"no workflow matches '{def.Pattern}'");
+            case "workflow-uses-all":
+                return Result(def.Patterns.All(AnyWorkflow), $"workflows must match all of: {string.Join(", ", def.Patterns.Where(p => !AnyWorkflow(p)))}");
+            case "actions-pinned-by-sha":
+                return PinnedBySha(def, tier, repo);
+            case "release-asset":
+                if (repo.ReleaseAssets is null)
+                    return Result(def.WorkflowPattern is not null && AnyWorkflow(def.WorkflowPattern),
+                        $"no release published yet and no workflow matches '{def.WorkflowPattern}'");
+                return Result(repo.ReleaseAssets.Any(a => Regex.IsMatch(a, def.Pattern!, RegexOptions.IgnoreCase)),
+                    $"latest release has no asset matching '{def.Pattern}'");
+            case "badge-api": {
+                var expected = def.Expected ?? tier;
+                var actual = repo.BadgeLevel is { } l && BadgeRank.TryGetValue(l, out var r) ? r : -1;
+                return Result(actual >= BadgeRank[expected], repo.BadgeLevel is null
+                    ? "project not registered at bestpractices.dev"
+                    : $"badge level '{repo.BadgeLevel}' is below '{expected}'");
+            }
+            case "summary-artifact": {
+                if (!repo.Summaries.TryGetValue(def.Artifact!, out var summary) || summary is null)
+                    return Result(false, $"no '{def.Artifact}' artifact on the latest default-branch run (workflow never ran or artifact expired)");
+                var result = summary["result"]?.GetValue<string>() ?? "unknown";
+                return Result(result == "pass", $"latest '{def.Artifact}' reports result '{result}'");
+            }
+            default:
+                return new AuditItem(def.Id, tier, def.Criterion, "manual", def.Note ?? "manual verification (organization/process)", def.Osps);
+        }
     }
 
     private static AuditItem PinnedBySha(PracticeDefinition def, string tier, RepoSnapshot repo) {
@@ -191,7 +226,7 @@ public static partial class RepoAuditor
             .Select(u => $"{u.File}: {u.Uses}")
             .ToList();
         return new AuditItem(def.Id, tier, def.Criterion, unpinned.Count == 0 ? "pass" : "fail",
-            unpinned.Count == 0 ? "" : "not pinned by SHA: " + string.Join("; ", unpinned.Take(5)));
+            unpinned.Count == 0 ? "" : "not pinned by SHA: " + string.Join("; ", unpinned.Take(5)), def.Osps);
     }
 
     /// <summary>
@@ -219,7 +254,7 @@ public static partial class RepoAuditor
         }
 
         return new AuditItem($"BP-07-L{level}", TierByLevel[level], $"Live default branch protection (level L{level})",
-            missing.Count == 0 ? "pass" : "fail", string.Join(", ", missing));
+            missing.Count == 0 ? "pass" : "fail", string.Join(", ", missing), ["AC", "BR"]);
     }
 
     private static AuditItem ScorecardItem(RepoSnapshot repo, int level, ConformanceChecker.ScorecardMinimum minimum) {
@@ -227,14 +262,14 @@ public static partial class RepoAuditor
         const string criterion = "OpenSSF Scorecard published and within the level minimums";
         if (repo.Scorecard is null)
             return new AuditItem(id, TierByLevel[level], criterion, minimum.MinScore > 0 ? "fail" : "pass",
-                minimum.MinScore > 0 ? "not published at api.scorecard.dev" : "");
+                minimum.MinScore > 0 ? "not published at api.scorecard.dev" : "", ["SA"]);
 
         var problems = new List<string>();
         if (repo.Scorecard.Score < minimum.MinScore) problems.Add($"score {repo.Scorecard.Score:0.0} < {minimum.MinScore}");
         foreach (var (check, min) in minimum.Checks)
             if (!repo.Scorecard.Checks.TryGetValue(check, out var score) || score < min)
                 problems.Add($"{check} {(repo.Scorecard.Checks.TryGetValue(check, out var s) ? s.ToString("0") : "?")} < {min}");
-        return new AuditItem(id, TierByLevel[level], criterion, problems.Count == 0 ? "pass" : "fail", string.Join(", ", problems));
+        return new AuditItem(id, TierByLevel[level], criterion, problems.Count == 0 ? "pass" : "fail", string.Join(", ", problems), ["SA"]);
     }
 
     /// <summary>Carrega conformance/best-practices.yaml do repositório local ou do recurso embutido.</summary>
@@ -261,6 +296,10 @@ public static partial class RepoAuditor
         public Dictionary<string, List<PracticeDefinition>> Tiers { get; set; } = new(StringComparer.OrdinalIgnoreCase);
         /// <summary>Critérios avaliados uma vez na organização (cada um declara o próprio tier).</summary>
         public List<PracticeDefinition> Organization { get; set; } = [];
+
+        /// <summary>Nomes de artefato que os critérios <c>summary-artifact</c> precisam baixar de cada repositório.</summary>
+        public IEnumerable<string> SummaryArtifacts =>
+            Tiers.Values.SelectMany(t => t).Where(d => d.Check == "summary-artifact").Select(d => d.Artifact!).Distinct(StringComparer.Ordinal);
     }
 
     /// <summary>Um critério do selo Best Practices e como verificá-lo.</summary>
@@ -272,18 +311,28 @@ public static partial class RepoAuditor
         public string? Tier { get; set; }
         /// <summary>Texto do critério.</summary>
         public string Criterion { get; set; } = "";
-        /// <summary>Tipo de verificação (file-exists, workflow-uses, actions-pinned-by-sha, ruleset-as-code, org-field, org-ruleset, manual).</summary>
+        /// <summary>Tipo de verificação: file-exists, ruleset-as-code, workflow-exists, workflow-uses, workflow-uses-all, actions-pinned-by-sha, release-asset, badge-api, summary-artifact, org-field, org-ruleset, manual.</summary>
         public string Check { get; set; } = "";
         /// <summary>Caminho do arquivo para verificações por arquivo.</summary>
         public string? Path { get; set; }
-        /// <summary>Regex para verificações por conteúdo de workflow.</summary>
+        /// <summary>Regex para verificações por conteúdo de workflow ou por nome de asset da release.</summary>
         public string? Pattern { get; set; }
+        /// <summary>Regexes que todos precisam casar em algum workflow (workflow-uses-all).</summary>
+        public List<string> Patterns { get; set; } = [];
+        /// <summary>Regex de workflow aceito como evidência quando o repositório ainda não tem release (release-asset).</summary>
+        public string? WorkflowPattern { get; set; }
+        /// <summary>Nome do artefato de run com o sumário JSON (summary-artifact); o arquivo lido é <c>&lt;artifact&gt;.json</c>.</summary>
+        public string? Artifact { get; set; }
         /// <summary>Objeto consultado em org-field: <c>organization</c> (padrão) ou <c>workflow</c> (permissões do Actions).</summary>
         public string? Source { get; set; }
         /// <summary>Campo JSON lido em org-field.</summary>
         public string? Field { get; set; }
-        /// <summary>Valor esperado do campo em org-field (comparação textual, sem diferenciar maiúsculas).</summary>
+        /// <summary>Valor esperado: campo em org-field (comparação textual, sem diferenciar maiúsculas) ou nível mínimo do selo em badge-api (padrão: o tier do item).</summary>
         public string? Expected { get; set; }
+        /// <summary>Detalhe mostrado em itens manuais (por que não é automático, o que falta integrar).</summary>
+        public string? Note { get; set; }
+        /// <summary>Categorias do OSPS Baseline cobertas (AC, BR, DO, GV, LE, QA, SA, VM).</summary>
+        public List<string> Osps { get; set; } = [];
     }
 
     [GeneratedRegex(@"^\s*-?\s*uses:\s*(?<uses>\S+)", RegexOptions.Multiline)]

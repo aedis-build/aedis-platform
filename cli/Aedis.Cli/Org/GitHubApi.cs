@@ -111,6 +111,39 @@ public sealed class GitHubApi
         return match is null ? "created" : "updated";
     }
 
+    /// <summary>Nomes dos assets da última release; nulo quando o repositório não tem releases.</summary>
+    public async Task<IReadOnlyList<string>?> GetLatestReleaseAssetNamesAsync(string org, string repo, CancellationToken ct) {
+        var release = await GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/releases/latest", ct);
+        return release?["assets"]?.AsArray().OfType<JsonObject>().Select(a => a["name"]!.GetValue<string>()).ToList();
+    }
+
+    /// <summary>Nível do selo OpenSSF Best Practices registrado para o repositório em bestpractices.dev; nulo quando não registrado.</summary>
+    public async Task<string?> GetBestPracticesBadgeLevelAsync(string org, string repo, CancellationToken ct) {
+        var projects = await GetJsonAsync<JsonArray>($"https://www.bestpractices.dev/projects.json?url=https://github.com/{org}/{repo}", ct, plainJson: true);
+        return projects?.OfType<JsonObject>().FirstOrDefault()?["badge_level"]?.GetValue<string>();
+    }
+
+    /// <summary>
+    ///     Sumário JSON (<c>&lt;artifact&gt;.json</c>) do artefato mais recente com esse nome produzido no branch padrão;
+    ///     nulo quando não há artefato válido ou o arquivo não está no zip.
+    /// </summary>
+    public async Task<JsonObject?> TryGetArtifactSummaryAsync(string org, string repo, string branch, string artifact, CancellationToken ct) {
+        var list = await GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/actions/artifacts?name={Uri.EscapeDataString(artifact)}&per_page=20", ct);
+        var latest = list?["artifacts"]?.AsArray().OfType<JsonObject>()
+            .Where(a => a["expired"]?.GetValue<bool>() != true && a["workflow_run"]?["head_branch"]?.GetValue<string>() == branch)
+            .OrderByDescending(a => a["created_at"]?.GetValue<string>(), StringComparer.Ordinal)
+            .FirstOrDefault();
+        if (latest?["archive_download_url"]?.GetValue<string>() is not { } url) return null;
+
+        using var response = await _http.GetAsync(url, ct);
+        if (!response.IsSuccessStatusCode) return null;
+        using var zip = new System.IO.Compression.ZipArchive(await response.Content.ReadAsStreamAsync(ct));
+        var entry = zip.Entries.FirstOrDefault(e => e.Name.Equals($"{artifact}.json", StringComparison.OrdinalIgnoreCase));
+        if (entry is null) return null;
+        using var reader = new StreamReader(entry.Open());
+        return JsonNode.Parse(await reader.ReadToEndAsync(ct)) as JsonObject;
+    }
+
     /// <summary>Objeto da organização (<c>GET /orgs/{org}</c>); vazio quando não há acesso.</summary>
     public async Task<JsonObject> GetOrganizationAsync(string org, CancellationToken ct) =>
         await GetJsonAsync<JsonObject>($"https://api.github.com/orgs/{org}", ct) ?? new JsonObject();

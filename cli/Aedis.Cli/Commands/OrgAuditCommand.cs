@@ -45,10 +45,11 @@ public static class OrgAuditCommand
 
             var audits = new List<RepoAudit>();
             var missingChecks = false;
+            var practices = RepoAuditor.LoadBestPractices(Directory.GetCurrentDirectory());
             foreach (var (name, branch) in await api.ListRepositoriesAsync(orgName, cancellationToken)) {
                 if (only.Length > 0 && !only.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
                 if (only.Length == 0 && name == ".github") continue; // repositório de perfil da organização, sem código
-                var snapshot = await SnapshotAsync(api, orgName, name, branch, cancellationToken);
+                var snapshot = await SnapshotAsync(api, orgName, name, branch, practices, cancellationToken);
                 var audit = RepoAuditor.Evaluate(snapshot, targetLevel, Directory.GetCurrentDirectory());
                 if (parse.GetValue(apply) && parse.GetValue(checks) is not { Length: > 0 }) {
                     // Derivar da lista de checks verdes em main já exigiu um job filtrado por paths e travou o repositório: a escolha é do operador.
@@ -99,6 +100,11 @@ public static class OrgAuditCommand
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit-summary.json"), ToJson(orgAudit, targetLevel, audits), cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit.md"), ToMarkdown(orgAudit, targetLevel, audits), cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit.html"), ToHtml(orgAudit, targetLevel, audits), cancellationToken);
+            Directory.CreateDirectory(Path.Combine(outDir, "badges"));
+            foreach (var a in audits)
+                await File.WriteAllTextAsync(Path.Combine(outDir, "badges", $"{a.Repo}.json"), ToBadge("aedis", a.LevelAchieved), cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(outDir, "badge.json"),
+                ToBadge("aedis", Math.Min(orgAudit.LevelAchieved, audits.Count == 0 ? 0 : audits.Min(a => a.LevelAchieved))), cancellationToken);
             var ok = audits.Count > 0 && audits.All(a => a.LevelAchieved >= targetLevel) && orgAudit.LevelAchieved >= targetLevel;
             Console.WriteLine($"report written to {outDir} — organization L{orgAudit.LevelAchieved}, {audits.Count(a => a.LevelAchieved >= targetLevel)}/{audits.Count} repositories at L{targetLevel}");
             return ok ? 0 : 1;
@@ -106,8 +112,8 @@ public static class OrgAuditCommand
         return command;
     }
 
-    /// <summary>Baixa arquivos sondados, workflows, regras do branch e Scorecard de um repositório.</summary>
-    public static async Task<RepoSnapshot> SnapshotAsync(GitHubApi api, string org, string repo, string branch, CancellationToken ct) {
+    /// <summary>Baixa arquivos sondados, workflows, regras do branch, Scorecard, assets da release, selo e sumários de run de um repositório.</summary>
+    public static async Task<RepoSnapshot> SnapshotAsync(GitHubApi api, string org, string repo, string branch, RepoAuditor.BestPracticesFile practices, CancellationToken ct) {
         var files = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var path in RepoAuditor.ProbedFiles)
             if (await api.TryGetFileAsync(org, repo, path, ct) is { } content)
@@ -118,15 +124,30 @@ public static class OrgAuditCommand
             if (name.EndsWith(".yml", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
                 workflows[name] = await api.TryGetFileAsync(org, repo, $".github/workflows/{name}", ct) ?? "";
 
+        var summaries = new Dictionary<string, JsonObject?>(StringComparer.Ordinal);
+        foreach (var artifact in practices.SummaryArtifacts)
+            summaries[artifact] = await api.TryGetArtifactSummaryAsync(org, repo, branch, artifact, ct);
+
         return new RepoSnapshot {
             Name = repo,
             DefaultBranch = branch,
             Files = files,
             Workflows = workflows,
             BranchRules = await api.GetBranchRulesAsync(org, repo, branch, ct),
-            Scorecard = await api.GetScorecardAsync(org, repo, ct)
+            Scorecard = await api.GetScorecardAsync(org, repo, ct),
+            ReleaseAssets = await api.GetLatestReleaseAssetNamesAsync(org, repo, ct),
+            BadgeLevel = await api.GetBestPracticesBadgeLevelAsync(org, repo, ct),
+            Summaries = summaries
         };
     }
+
+    /// <summary>Badge no formato endpoint do shields.io (<c>img.shields.io/endpoint?url=...</c>) para o nível alcançado.</summary>
+    public static string ToBadge(string label, int level) => new JsonObject {
+        ["schemaVersion"] = 1,
+        ["label"] = label,
+        ["message"] = $"L{level}",
+        ["color"] = level switch { 3 => "brightgreen", 2 => "green", 1 => "yellow", _ => "red" }
+    }.ToJsonString();
 
     /// <summary>Baixa o objeto da organização, as permissões de workflow do Actions e os rulesets de organização.</summary>
     public static async Task<OrgSnapshot> SnapshotOrganizationAsync(GitHubApi api, string org, CancellationToken ct) => new() {
@@ -137,7 +158,8 @@ public static class OrgAuditCommand
     };
 
     private static JsonArray Items(IEnumerable<AuditItem> items) => new(items.Select(i => (JsonNode)new JsonObject {
-        ["id"] = i.Id, ["tier"] = i.Tier, ["criterion"] = i.Criterion, ["status"] = i.Status, ["detail"] = i.Detail
+        ["id"] = i.Id, ["tier"] = i.Tier, ["criterion"] = i.Criterion, ["status"] = i.Status, ["detail"] = i.Detail,
+        ["osps"] = new JsonArray((i.Osps ?? []).Select(o => (JsonNode)o).ToArray())
     }).ToArray());
 
     /// <summary>Sumário JSON (schema aedis.platform/org-audit/v1) consumível pelo portal.</summary>
@@ -196,9 +218,9 @@ public static class OrgAuditCommand
     public static string ToHtml(OrgAudit org, int targetLevel, IReadOnlyList<RepoAudit> audits) {
         static string H(string? text) => System.Net.WebUtility.HtmlEncode(text ?? "");
         static string ItemsTable(IEnumerable<AuditItem> items) {
-            var rows = new StringBuilder("<table><tr><th>Id</th><th>Tier</th><th>Criterion</th><th>Status</th><th>Detail</th></tr>");
+            var rows = new StringBuilder("<table><tr><th>Id</th><th>Tier</th><th>Criterion</th><th>OSPS</th><th>Status</th><th>Detail</th></tr>");
             foreach (var i in items)
-                rows.Append($"<tr class=\"{H(i.Status)}\"><td>{H(i.Id)}</td><td>{H(i.Tier)}</td><td>{H(i.Criterion)}</td><td>{H(i.Status)}</td><td>{H(i.Detail)}</td></tr>");
+                rows.Append($"<tr class=\"{H(i.Status)}\"><td>{H(i.Id)}</td><td>{H(i.Tier)}</td><td>{H(i.Criterion)}</td><td>{H(string.Join(" ", i.Osps ?? []))}</td><td>{H(i.Status)}</td><td>{H(i.Detail)}</td></tr>");
             return rows.Append("</table>").ToString();
         }
 
@@ -206,7 +228,7 @@ public static class OrgAuditCommand
         sb.AppendLine("<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
         sb.AppendLine($"<title>Audit {H(org.Name)}</title><style>body{{font:14px/1.5 system-ui,sans-serif;margin:24px;color:#1f2328}}table{{border-collapse:collapse;margin:8px 0 24px}}th,td{{border:1px solid #d0d7de;padding:4px 10px;text-align:left;vertical-align:top}}th{{background:#f6f8fa}}.pass{{background:#dafbe1}}.fail{{background:#ffebe9}}.manual{{background:#fff8c5}}h2{{margin-top:32px;border-bottom:1px solid #d0d7de}}.meta{{color:#59636e}}</style></head><body>");
         sb.AppendLine($"<h1>Organization audit: {H(org.Name)} — target L{targetLevel}</h1>");
-        sb.AppendLine($"<p class=\"meta\">Generated {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC · ruler: OpenSSF Best Practices (passing/silver/gold tiers), organization settings, live branch protection and OpenSSF Scorecard · organization L{org.LevelAchieved} · {audits.Count(a => a.LevelAchieved >= targetLevel)}/{audits.Count} repositories at L{targetLevel}</p>");
+        sb.AppendLine($"<p class=\"meta\">Generated {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC · ruler: OpenSSF Best Practices (passing/silver/gold tiers) with evidence from releases, the bestpractices.dev badge and CI run summaries, organization settings, live branch protection and OpenSSF Scorecard · OSPS column: OSPS Baseline categories covered (AC access control, BR build &amp; release, DO documentation, GV governance, LE legal, QA quality, SA security assessment, VM vulnerability management) · organization L{org.LevelAchieved} · {audits.Count(a => a.LevelAchieved >= targetLevel)}/{audits.Count} repositories at L{targetLevel}</p>");
 
         sb.AppendLine($"<h2 id=\"organization\">Organization <small class=\"meta\">— L{org.LevelAchieved}{(org.Applied.Count == 0 ? "" : " · applied: " + H(string.Join(", ", org.Applied)))}</small></h2>");
         sb.AppendLine(ItemsTable(org.Items));
