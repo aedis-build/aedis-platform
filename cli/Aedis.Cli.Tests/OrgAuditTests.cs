@@ -42,6 +42,7 @@ public sealed class OrgAuditTests
     private static Dictionary<string, JsonObject?> PassingSummaries() => new(StringComparer.Ordinal) {
         ["coverage-summary"] = new JsonObject { ["result"] = "pass" },
         ["sast-summary"] = new JsonObject { ["result"] = "pass" },
+        ["deps-summary"] = new JsonObject { ["result"] = "pass" },
         ["dast-summary"] = new JsonObject { ["result"] = "pass" }
     };
 

@@ -21,6 +21,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      attestations: write
     with:
       image: ghcr.io/aedis-build/examples/app
       version: ${{ inputs.version || '0.1.0' }}

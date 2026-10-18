@@ -70,6 +70,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      attestations: write
     outputs:
       digest: ${{ steps.build.outputs.digest }}
       image: ${{ inputs.image }}
@@ -176,6 +177,21 @@ jobs:
           DIGEST: ${{ steps.build.outputs.digest }}
         run: cosign attest --predicate sbom.spdx.json --type spdxjson "$IMAGE@$DIGEST"
 
+      - name: Proveniência (attestation SLSA do GitHub, publicada no registry)
+        if: inputs.push
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-name: ${{ inputs.image }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true
+      - name: Verificar a atestação (o que o consumidor fará)
+        if: inputs.push
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          OWNER: ${{ github.repository_owner }}
+        run: gh attestation verify "oci://$IMAGE@$DIGEST" --owner "$OWNER"
+
       - name: Sumário
         if: always()
         env:
@@ -191,6 +207,7 @@ jobs:
                      "image": os.environ["IMAGE"], "version": os.environ["VERSION"], "digest": os.environ.get("DIGEST", ""),
                      "pushed": os.environ["PUSHED"] == "true", "signed": os.environ["PUSHED"] == "true" and os.environ["OUTCOME"] == "success",
                      "sbomAttested": os.environ["PUSHED"] == "true" and os.environ["OUTCOME"] == "success",
+                     "provenanceVerified": os.environ["PUSHED"] == "true" and os.environ["OUTCOME"] == "success",
                      "result": "pass" if os.environ["OUTCOME"] == "success" else "fail"},
                     open("build-image-summary.json", "w"), indent=2)
           EOF

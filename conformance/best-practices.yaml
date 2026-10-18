@@ -70,6 +70,11 @@ tiers:
       check: summary-artifact
       artifact: sast-summary
       osps: [SA]
+    - id: BP-19
+      criterion: Latest dependency scan on the default branch has no unaccepted High/Critical vulnerability
+      check: summary-artifact
+      artifact: deps-summary
+      osps: [VM]
     - id: BP-17
       criterion: License and copyright declared for every file (REUSE.toml)
       check: file-exists

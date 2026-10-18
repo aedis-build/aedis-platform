@@ -83,7 +83,10 @@ A régua pede evidência, não só configuração: assets da última release (as
 em bestpractices.dev e o sumário JSON da run mais recente do branch padrão (`coverage-summary`, `sast-summary`,
 `dast-summary`) com `result: pass`. Cada item carrega as categorias do OSPS Baseline que cobre. O comando também grava
 `badge.json` e `badges/<repo>.json` no formato endpoint do shields.io
-(`https://img.shields.io/endpoint?url=<url do json>`) para o README mostrar o nível alcançado.
+(`https://img.shields.io/endpoint?url=<url do json>`) para o README mostrar o nível alcançado. O `coverage.yml`
+também publica `deps-summary.json` (`aedis.platform/deps-summary/v1`: vulnerabilidades conhecidas das dependências,
+gate em High/Critical com aceites em `deps-accept.yaml`), e o `build-image.yml` emite a atestação de proveniência do
+GitHub e a verifica com `gh attestation verify` antes de declarar sucesso.
 
 ```bash
 aedis org audit --org minha-org --level 3 --out ./auditoria
