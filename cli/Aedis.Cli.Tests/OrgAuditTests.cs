@@ -171,6 +171,9 @@ public sealed class OrgAuditTests
         fake.Writes.Should().HaveCount(2).And.AllSatisfy(w => w.Method.Should().Be(HttpMethod.Post));
         fake.Writes.First(w => w.Url.Contains("/bom/")).Body.Should().Contain("ci / build").And.NotContain("Scorecard").And.NotContain("ci / lint");
         (await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.md"))).Should().Contain("| bom | L3 |").And.Contain("| vazio | L0 |");
+        var html = await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.html"));
+        html.Should().StartWith("<!doctype html>").And.Contain("id=\"bom\"").And.Contain("id=\"vazio\"")
+            .And.Contain("BP-01").And.Contain("OpenSSF Scorecard").And.Contain("ci / build");
     }
 
     [Fact]

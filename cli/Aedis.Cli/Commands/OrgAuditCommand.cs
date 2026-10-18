@@ -67,6 +67,7 @@ public static class OrgAuditCommand
             if (missingChecks) return 2;
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit-summary.json"), ToJson(parse.GetValue(org)!, targetLevel, audits), cancellationToken);
             await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit.md"), ToMarkdown(parse.GetValue(org)!, targetLevel, audits), cancellationToken);
+            await File.WriteAllTextAsync(Path.Combine(outDir, "org-audit.html"), ToHtml(parse.GetValue(org)!, targetLevel, audits), cancellationToken);
             var ok = audits.Count > 0 && audits.All(a => a.LevelAchieved >= targetLevel);
             Console.WriteLine($"relatório em {outDir} — {audits.Count(a => a.LevelAchieved >= targetLevel)}/{audits.Count} repositórios no L{targetLevel}");
             return ok ? 0 : 1;
@@ -134,6 +135,41 @@ public static class OrgAuditCommand
                 sb.AppendLine($"- **{i.Id}** ({i.Status}) {i.Criterion}{(string.IsNullOrEmpty(i.Detail) ? "" : ": " + i.Detail)}");
         }
 
+        return sb.ToString();
+    }
+
+    /// <summary>
+    ///     Relatório HTML autocontido no estilo dos scanners (ZAP): resumo por repositório e, para cada um, todos os
+    ///     critérios avaliados por tier com status e detalhe, checks obrigatórios e notas do Scorecard por check.
+    /// </summary>
+    public static string ToHtml(string org, int targetLevel, IReadOnlyList<RepoAudit> audits) {
+        static string H(string? text) => System.Net.WebUtility.HtmlEncode(text ?? "");
+        var sb = new StringBuilder();
+        sb.AppendLine("<!doctype html><html lang=\"pt-BR\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">");
+        sb.AppendLine($"<title>Auditoria {H(org)}</title><style>body{{font:14px/1.5 system-ui,sans-serif;margin:24px;color:#1f2328}}table{{border-collapse:collapse;margin:8px 0 24px}}th,td{{border:1px solid #d0d7de;padding:4px 10px;text-align:left;vertical-align:top}}th{{background:#f6f8fa}}.pass{{background:#dafbe1}}.fail{{background:#ffebe9}}.manual{{background:#fff8c5}}h2{{margin-top:32px;border-bottom:1px solid #d0d7de}}.meta{{color:#59636e}}</style></head><body>");
+        sb.AppendLine($"<h1>Auditoria da organização {H(org)} — alvo L{targetLevel}</h1>");
+        sb.AppendLine($"<p class=\"meta\">Gerado em {DateTimeOffset.UtcNow:yyyy-MM-dd HH:mm} UTC · régua: OpenSSF Best Practices (tiers passing/silver/gold), proteção viva do branch e OpenSSF Scorecard · {audits.Count(a => a.LevelAchieved >= targetLevel)}/{audits.Count} repositórios no L{targetLevel}</p>");
+        sb.AppendLine("<table><tr><th>Repositório</th><th>Nível</th><th>Scorecard</th><th>Passa</th><th>Falha</th><th>Manual</th><th>Ruleset</th><th>Checks obrigatórios</th></tr>");
+        foreach (var a in audits)
+            sb.AppendLine($"<tr class=\"{(a.LevelAchieved >= targetLevel ? "pass" : "fail")}\"><td><a href=\"#{H(a.Repo)}\">{H(a.Repo)}</a></td><td>L{a.LevelAchieved}</td><td>{(a.Scorecard is null ? "não publicado" : a.Scorecard.Score.ToString("0.0"))}</td>"
+                          + $"<td>{a.Items.Count(i => i.Status == "pass")}</td><td>{a.Items.Count(i => i.Status == "fail")}</td><td>{a.Items.Count(i => i.Status == "manual")}</td><td>{H(a.RulesetApplied ?? "-")}</td><td>{H(string.Join(", ", a.RequiredChecks))}</td></tr>");
+        sb.AppendLine("</table>");
+
+        foreach (var a in audits) {
+            sb.AppendLine($"<h2 id=\"{H(a.Repo)}\">{H(a.Repo)} <small class=\"meta\">({H(a.DefaultBranch)}) — L{a.LevelAchieved}</small></h2>");
+            sb.AppendLine("<table><tr><th>Id</th><th>Tier</th><th>Critério</th><th>Status</th><th>Detalhe</th></tr>");
+            foreach (var i in a.Items)
+                sb.AppendLine($"<tr class=\"{H(i.Status)}\"><td>{H(i.Id)}</td><td>{H(i.Tier)}</td><td>{H(i.Criterion)}</td><td>{H(i.Status)}</td><td>{H(i.Detail)}</td></tr>");
+            sb.AppendLine("</table>");
+            if (a.Scorecard is { } sc) {
+                sb.AppendLine($"<h3>OpenSSF Scorecard — nota {sc.Score:0.0}</h3><table><tr><th>Check</th><th>Nota</th></tr>");
+                foreach (var (check, score) in sc.Checks.OrderBy(c => c.Key, StringComparer.Ordinal))
+                    sb.AppendLine($"<tr class=\"{(score >= 8 ? "pass" : score < 0 ? "manual" : "fail")}\"><td>{H(check)}</td><td>{score:0}</td></tr>");
+                sb.AppendLine("</table>");
+            }
+        }
+
+        sb.AppendLine("</body></html>");
         return sb.ToString();
     }
 }

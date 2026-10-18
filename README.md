@@ -69,8 +69,9 @@ Apache-2.0. Veja [LICENSE](LICENSE) e [SECURITY.md](SECURITY.md).
 
 Aplica a régua de conformidade aos repositórios de uma organização GitHub: critérios do selo OpenSSF Best
 Practices por tier (`conformance/best-practices.yaml`), proteção viva do branch padrão e mínimos do OpenSSF
-Scorecard (`conformance/levels.yaml`). Gera `org-audit-summary.json` (schema `aedis.platform/org-audit/v1`) e
-`org-audit.md`, e com `--apply` cria/atualiza o ruleset `aedis-main` no nível pedido.
+Scorecard (`conformance/levels.yaml`). Gera `org-audit-summary.json` (schema `aedis.platform/org-audit/v1`),
+`org-audit.md` e `org-audit.html` (relatório autocontido com todos os critérios por repositório, checks obrigatórios e
+notas do Scorecard por check), e com `--apply` cria/atualiza o ruleset `aedis-main` no nível pedido.
 
 ```bash
 aedis org audit --org minha-org --level 3 --out ./auditoria
