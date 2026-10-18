@@ -31,8 +31,20 @@ public sealed class OrgAuditTests
           image:
             uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc  # cosign, sbom, provenance
           dast:
-            uses: aedis-build/aedis-platform/.github/workflows/dast.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc
+            uses: ./.github/actions/dast@33c000e3effbd9151212c77aa29c24646ec6e5dc
+          verify:
+            runs-on: ubuntu-latest
+            steps:
+              - uses: actions/attest-build-provenance@3d3c42e5aac5ba805825da76410c181273ba90b1
+              - run: gh attestation verify app.tgz --owner acme
         """;
+
+    private static Dictionary<string, JsonObject?> PassingSummaries() => new(StringComparer.Ordinal) {
+        ["coverage-summary"] = new JsonObject { ["result"] = "pass" },
+        ["sast-summary"] = new JsonObject { ["result"] = "pass" },
+        ["deps-summary"] = new JsonObject { ["result"] = "pass" },
+        ["dast-summary"] = new JsonObject { ["result"] = "pass" }
+    };
 
     private static JsonArray Rules(int level) {
         var rules = new JsonArray { new JsonObject { ["type"] = "deletion" }, new JsonObject { ["type"] = "non_fast_forward" } };
@@ -52,13 +64,16 @@ public sealed class OrgAuditTests
     private static RepoSnapshot Snapshot(int protectionLevel, bool allFiles = true, string workflow = PinnedWorkflow, ScorecardResult? scorecard = null) {
         var files = new Dictionary<string, string>();
         if (allFiles)
-            foreach (var f in new[] { "SECURITY.md", "LICENSE", "CONTRIBUTING.md", ".github/dependabot.yml", ".github/rulesets/main.json", "CODEOWNERS" })
+            foreach (var f in new[] { "SECURITY.md", "LICENSE", "CONTRIBUTING.md", ".github/dependabot.yml", ".github/rulesets/main.json", "CODEOWNERS", "REUSE.toml" })
                 files[f] = "x";
         return new RepoSnapshot {
             Name = "repo", DefaultBranch = "main", Files = files,
             Workflows = new Dictionary<string, string> { ["ci.yml"] = workflow },
             BranchRules = Rules(protectionLevel),
-            Scorecard = scorecard
+            Scorecard = scorecard,
+            ReleaseAssets = ["app-1.0.0.nupkg", "app-1.0.0.nupkg.sigstore", "sbom.spdx.json"],
+            BadgeLevel = "gold",
+            Summaries = PassingSummaries()
         };
     }
 
@@ -73,7 +88,30 @@ public sealed class OrgAuditTests
 
         audit.Items.Where(i => i.Status == "fail").Should().BeEmpty();
         audit.LevelAchieved.Should().Be(3);
-        audit.Items.Where(i => i.Status == "manual").Select(i => i.Id).Should().Contain(["BP-21", "BP-25"]);
+        audit.Items.Where(i => i.Status == "manual").Select(i => i.Id).Should().Contain(["BP-21", "BP-25", "BP-27"]);
+        audit.Items.First(i => i.Id == "BP-27").Detail.Should().Contain(".NET");
+        audit.Items.First(i => i.Id == "BP-07").Osps.Should().Equal("AC", "BR");
+    }
+
+    [Fact]
+    public void Evidencia_ausente_ou_reprovada_derruba_o_nivel_e_sem_release_vale_o_workflow() {
+        var semEvidencia = RepoAuditor.Evaluate(new RepoSnapshot {
+            Name = "repo", DefaultBranch = "main", Workflows = new Dictionary<string, string> { ["ci.yml"] = PinnedWorkflow },
+            BranchRules = Rules(3), Scorecard = Gold(), BadgeLevel = "passing",
+            Summaries = new Dictionary<string, JsonObject?>(StringComparer.Ordinal) { ["coverage-summary"] = new JsonObject { ["result"] = "fail" } }
+        }, 3, Root);
+
+        semEvidencia.Items.Should().Contain(i => i.Id == "BP-13" && i.Status == "fail" && i.Detail.Contains("result 'fail'"));
+        semEvidencia.Items.Should().Contain(i => i.Id == "BP-16" && i.Status == "fail" && i.Detail.Contains("no 'sast-summary' artifact"));
+        semEvidencia.Items.Should().Contain(i => i.Id == "BP-11" && i.Status == "pass", "sem release, o workflow com cosign/attest vale como evidência");
+        semEvidencia.Items.Should().Contain(i => i.Id == "BP-18" && i.Status == "pass");
+        semEvidencia.Items.Should().Contain(i => i.Id == "BP-26" && i.Status == "fail" && i.Detail.Contains("below 'silver'"));
+        semEvidencia.Items.Should().Contain(i => i.Id == "BP-23" && i.Status == "pass");
+
+        var semVerificacao = RepoAuditor.Evaluate(Snapshot(3, workflow: PinnedWorkflow.Replace("gh attestation verify", "echo"), scorecard: Gold()), 3, Root);
+        semVerificacao.Items.Should().Contain(i => i.Id == "BP-23" && i.Status == "fail" && i.Detail.Contains("attestation verify|slsa-verifier"));
+        var releaseSemSbom = RepoAuditor.Evaluate(new RepoSnapshot { Name = "r", DefaultBranch = "main", ReleaseAssets = ["app.nupkg"] }, 3, Root);
+        releaseSemSbom.Items.Should().Contain(i => i.Id == "BP-22" && i.Status == "fail" && i.Detail.Contains("latest release has no asset"));
     }
 
     [Fact]
@@ -174,6 +212,13 @@ public sealed class OrgAuditTests
             if (url.Contains("/repos/acme/bom/commits/main")) return Json("""{"sha":"abc"}""");
             if (url.Contains("/repos/acme/bom/commits/abc/check-runs")) return Json("""{"check_runs":[{"name":"ci / build","conclusion":"success"},{"name":"OpenSSF Scorecard","conclusion":"success"},{"name":"ci / lint","conclusion":"failure"}]}""");
             if (url.Contains("/repos/acme/bom/rulesets")) return Json("[]");
+            if (url.Contains("/repos/acme/bom/releases/latest")) return Json("""{"assets":[{"name":"bom.nupkg"},{"name":"bom.nupkg.sigstore"},{"name":"bom.sbom.spdx.json"}]}""");
+            if (url.Contains("bestpractices.dev/projects.json?url=https://github.com/acme/bom")) return Json("""[{"id":1,"badge_level":"gold"}]""");
+            if (url.Contains("/repos/acme/bom/actions/artifacts?name=")) {
+                var name = Uri.UnescapeDataString(url.Split("name=")[1].Split('&')[0]);
+                return Json($$"""{"artifacts":[{"id":9,"expired":false,"created_at":"2026-10-18T00:00:00Z","workflow_run":{"head_branch":"main"},"archive_download_url":"https://api.github.com/repos/acme/bom/actions/artifacts/9/{{name}}/zip"}]}""");
+            }
+            if (url.Contains("/repos/acme/bom/actions/artifacts/9/")) return Zip(url.Split('/')[^2] + ".json", """{"result":"pass"}""");
             if (url.Contains("api.scorecard.dev/projects/github.com/acme/bom")) return Json("""{"score":9.5,"checks":[{"name":"Branch-Protection","score":9},{"name":"Code-Review","score":9},{"name":"Pinned-Dependencies","score":10},{"name":"SAST","score":10},{"name":"Vulnerabilities","score":10},{"name":"Signed-Releases","score":9},{"name":"Dependency-Update-Tool","score":10},{"name":"Security-Policy","score":10},{"name":"Token-Permissions","score":10},{"name":"Dangerous-Workflow","score":10},{"name":"Binary-Artifacts","score":10}]}""");
             if (url.Contains("/repos/acme/vazio/rules/branches/main")) return Json("[]");
             if (url.Contains("/repos/acme/vazio/rulesets")) return Json("[]");
@@ -184,6 +229,15 @@ public sealed class OrgAuditTests
 
         private static HttpResponseMessage Json(string body, HttpStatusCode status = HttpStatusCode.OK) =>
             new(status) { Content = new StringContent(body, Encoding.UTF8, "application/json") };
+
+        private static HttpResponseMessage Zip(string entry, string content) {
+            var stream = new MemoryStream();
+            using (var zip = new System.IO.Compression.ZipArchive(stream, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+            using (var writer = new StreamWriter(zip.CreateEntry(entry).Open()))
+                writer.Write(content);
+            stream.Position = 0;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(stream) };
+        }
 
         private static HttpResponseMessage File(string text) =>
             Json($$"""{"type":"file","content":"{{Convert.ToBase64String(Encoding.UTF8.GetBytes(text))}}"}""");
@@ -213,7 +267,10 @@ public sealed class OrgAuditTests
         (await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.md"))).Should().Contain("| bom | L3 |").And.Contain("| vazio | L0 |");
         var html = await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "org-audit.html"));
         html.Should().StartWith("<!doctype html>").And.Contain("id=\"bom\"").And.Contain("id=\"vazio\"")
-            .And.Contain("BP-01").And.Contain("ORG-01").And.Contain("OpenSSF Scorecard").And.Contain("ci / build");
+            .And.Contain("BP-01").And.Contain("ORG-01").And.Contain("OpenSSF Scorecard").And.Contain("ci / build").And.Contain("<th>OSPS</th>");
+        JsonNode.Parse(await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "badges", "bom.json")))!["message"]!.GetValue<string>().Should().Be("L3");
+        JsonNode.Parse(await System.IO.File.ReadAllTextAsync(Path.Combine(outDir, "badge.json")))!["message"]!.GetValue<string>().Should().Be("L0", "a badge da organização é o menor nível");
+        repos.First(r => r!["name"]!.GetValue<string>() == "bom")!["items"]!.AsArray().First(i => i!["id"]!.GetValue<string>() == "BP-01")!["osps"]!.AsArray().Should().HaveCount(1);
     }
 
     [Fact]

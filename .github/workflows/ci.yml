@@ -144,6 +144,18 @@ jobs:
           accept-file: examples/app/dast-accept.yaml
       - run: python3 .github/actions/dast/dast-summary.py --self-test
 
+  reuse:
+    name: REUSE (licença e copyright em todo arquivo)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: pipx run reuse==5.0.2 lint
+      - run: python3 scripts/deps-summary.py --self-test
+
   tenant-template:
     name: Template do tenant valida com o chart
     runs-on: ubuntu-latest

@@ -106,6 +106,7 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      attestations: write
     with:
       image: ${{ inputs.image }}
       version: ${{ github.ref_name }}

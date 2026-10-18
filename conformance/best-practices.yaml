@@ -1,7 +1,11 @@
 # Critérios do selo OpenSSF Best Practices (bestpractices.dev) traduzidos em itens verificáveis num repositório
-# GitHub e na organização. Lido por `aedis platform validate --level N`, por `aedis org audit` e pelo portal.
-# Nível do selo exigido por nível de conformidade: L1 passing, L2 silver, L3 gold. Os textos dos critérios ficam
-# em inglês porque saem nos relatórios entregues à organização e a auditores.
+# GitHub e na organização, com evidência real sempre que ela existe: assets da última release, selo registrado,
+# sumários JSON das runs do branch padrão. Lido por `aedis org audit` e pelo portal. Nível do selo exigido por
+# nível de conformidade: L1 passing, L2 silver, L3 gold. Textos em inglês porque saem nos relatórios.
+#
+# `osps` mapeia cada item às CATEGORIAS do OSPS Baseline (AC access control, BR build & release, DO documentation,
+# GV governance, LE legal, QA quality, SA security assessment, VM vulnerability management). O mapeamento é por
+# categoria; os IDs de controle serão conferidos contra a edição vigente do Baseline antes de virar afirmação.
 schema: aedis.platform/best-practices/v1
 tiers:
   passing:
@@ -9,65 +13,113 @@ tiers:
       criterion: Published vulnerability policy (SECURITY.md with a private reporting channel)
       check: file-exists
       path: SECURITY.md
+      osps: [VM]
     - id: BP-02
       criterion: OSI-approved license in the repository
       check: file-exists
       path: LICENSE
+      osps: [LE]
     - id: BP-03
       criterion: Contribution guide
       check: file-exists
       path: CONTRIBUTING.md
+      osps: [DO, GV]
     - id: BP-04
       criterion: Automated tests run in CI
       check: workflow-exists
       path: .github/workflows
+      osps: [QA]
     - id: BP-05
       criterion: Static analysis in CI (CodeQL or Semgrep)
       check: workflow-uses
       pattern: "codeql-action|sast.yml|semgrep"
+      osps: [SA]
     - id: BP-06
       criterion: Dependencies updated automatically (Dependabot/Renovate)
       check: file-exists
       path: .github/dependabot.yml
+      osps: [VM]
     - id: BP-07
       criterion: Default branch protected, changes only through reviewed pull requests
       check: ruleset-as-code
       path: .github/rulesets/main.json
+      osps: [AC, BR]
   silver:
     - id: BP-11
-      criterion: Signed releases (cosign on images/charts, provenance)
-      check: workflow-uses
-      pattern: "cosign"
+      criterion: Signed releases (Sigstore bundles on release assets or cosign/attestations in the build workflow)
+      check: release-asset
+      pattern: "\\.(sigstore|bundle|sig)$|\\.intoto\\.jsonl$"
+      workflowPattern: "cosign|attest-build-provenance"
+      osps: [BR]
     - id: BP-12
       criterion: Pinned dependencies (actions pinned by SHA)
       check: actions-pinned-by-sha
+      osps: [BR]
     - id: BP-13
-      criterion: Test coverage measured with a threshold
-      check: workflow-uses
-      pattern: "coverage.yml"
+      criterion: Latest coverage run on the default branch passed its threshold gate
+      check: summary-artifact
+      artifact: coverage-summary
+      osps: [QA]
     - id: BP-15
       criterion: Conventional Commits and linear history
       check: workflow-uses
       pattern: "conventional-commits.yml"
+      osps: [QA]
+    - id: BP-16
+      criterion: Latest SAST run on the default branch has no unaccepted blocking findings
+      check: summary-artifact
+      artifact: sast-summary
+      osps: [SA]
+    - id: BP-19
+      criterion: Latest dependency scan on the default branch has no unaccepted High/Critical vulnerability
+      check: summary-artifact
+      artifact: deps-summary
+      osps: [VM]
+    - id: BP-17
+      criterion: License and copyright declared for every file (REUSE.toml)
+      check: file-exists
+      path: REUSE.toml
+      osps: [LE]
+    - id: BP-18
+      criterion: OpenSSF Best Practices badge registered at the passing level or higher
+      check: badge-api
+      expected: passing
+      osps: [GV]
   gold:
     - id: BP-21
       criterion: Two or more maintainers with mandatory code owner review
       check: manual
+      osps: [GV]
     - id: BP-22
-      criterion: SBOM published for every release
-      check: workflow-uses
-      pattern: "sbom"
+      criterion: SBOM published with every release (SPDX/CycloneDX asset) or attached to the built image
+      check: release-asset
+      pattern: "sbom|\\.spdx|\\.cdx|cyclonedx"
+      workflowPattern: "sbom|syft"
+      osps: [BR]
     - id: BP-23
-      criterion: Reproducible builds or verifiable provenance (SLSA)
-      check: workflow-uses
-      pattern: "provenance"
+      criterion: Build provenance emitted and verified (SLSA; GitHub attestations or slsa-github-generator plus verification)
+      check: workflow-uses-all
+      patterns: ["attest-build-provenance|slsa-github-generator", "attestation verify|slsa-verifier"]
+      osps: [BR]
     - id: BP-24
-      criterion: Dynamic testing (DAST) against the exposed surface
-      check: workflow-uses
-      pattern: "actions/dast@|dast\\.yml"
+      criterion: Latest dynamic test (DAST) run on the default branch passed
+      check: summary-artifact
+      artifact: dast-summary
+      osps: [SA]
     - id: BP-25
       criterion: Evidence retained and risk acceptances reviewed periodically
       check: manual
+      osps: [GV]
+    - id: BP-26
+      criterion: OpenSSF Best Practices badge at the silver level or higher
+      check: badge-api
+      expected: silver
+      osps: [GV]
+    - id: BP-27
+      criterion: Continuous fuzzing of parsers and codecs
+      check: manual
+      note: no continuous fuzzer with .NET support is integrated yet; the criterion stays mapped until one is
+      osps: [SA]
 # Controles avaliados uma vez na organização (GET /orgs/{org}, permissões de workflow do Actions, rulesets de org).
 # `aedis org audit --apply` aplica os que têm API de escrita; 2FA só se liga na UI da organização.
 organization:
@@ -78,6 +130,7 @@ organization:
     source: workflow
     field: default_workflow_permissions
     expected: read
+    osps: [AC, BR]
   - id: ORG-02
     tier: passing
     criterion: GitHub Actions cannot approve pull requests
@@ -85,37 +138,44 @@ organization:
     source: workflow
     field: can_approve_pull_request_reviews
     expected: "false"
+    osps: [AC]
   - id: ORG-03
     tier: passing
     criterion: Dependabot alerts enabled for new repositories
     check: org-field
     field: dependabot_alerts_enabled_for_new_repositories
     expected: "true"
+    osps: [VM]
   - id: ORG-04
     tier: silver
     criterion: Two-factor authentication required for all members
     check: org-field
     field: two_factor_requirement_enabled
     expected: "true"
+    osps: [AC]
   - id: ORG-05
     tier: silver
     criterion: Dependabot security updates enabled for new repositories
     check: org-field
     field: dependabot_security_updates_enabled_for_new_repositories
     expected: "true"
+    osps: [VM]
   - id: ORG-06
     tier: silver
     criterion: Organization ruleset protects the default branch of every repository
     check: org-ruleset
+    osps: [AC, BR]
   - id: ORG-07
     tier: gold
     criterion: Secret scanning enabled for new repositories
     check: org-field
     field: secret_scanning_enabled_for_new_repositories
     expected: "true"
+    osps: [SA]
   - id: ORG-08
     tier: gold
     criterion: Secret scanning push protection enabled for new repositories
     check: org-field
     field: secret_scanning_push_protection_enabled_for_new_repositories
     expected: "true"
+    osps: [SA]

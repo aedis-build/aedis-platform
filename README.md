@@ -79,6 +79,15 @@ organização `aedis-main` para o branch padrão de todos os repositórios, perm
 leitura, sem aprovar PRs), configurações de segurança da org e o ruleset de cada repositório com os checks informados.
 2FA não tem API de escrita e segue como item a ligar na UI da organização.
 
+A régua pede evidência, não só configuração: assets da última release (assinaturas Sigstore, SBOM), selo registrado
+em bestpractices.dev e o sumário JSON da run mais recente do branch padrão (`coverage-summary`, `sast-summary`,
+`dast-summary`) com `result: pass`. Cada item carrega as categorias do OSPS Baseline que cobre. O comando também grava
+`badge.json` e `badges/<repo>.json` no formato endpoint do shields.io
+(`https://img.shields.io/endpoint?url=<url do json>`) para o README mostrar o nível alcançado. O `coverage.yml`
+também publica `deps-summary.json` (`aedis.platform/deps-summary/v1`: vulnerabilidades conhecidas das dependências,
+gate em High/Critical com aceites em `deps-accept.yaml`), e o `build-image.yml` emite a atestação de proveniência do
+GitHub e a verifica com `gh attestation verify` antes de declarar sucesso.
+
 ```bash
 aedis org audit --org minha-org --level 3 --out ./auditoria
 aedis org audit --org minha-org --level 3 --apply --required-check "ci / build"
