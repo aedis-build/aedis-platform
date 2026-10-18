@@ -8,7 +8,6 @@ on:
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
-  workflow_call:
 
 permissions: {}
 
@@ -31,23 +30,6 @@ jobs:
           results_format: sarif
           publish_results: ${{ github.event_name != 'pull_request' }}
 
-      - name: Sumário (score total e por check)
-        run: |
-          set -euo pipefail
-          python3 - <<'EOF'
-          import json, datetime
-          sarif = json.load(open("scorecard.sarif", encoding="utf-8"))
-          checks = {}
-          for run in sarif.get("runs", []):
-              for res in run.get("results", []):
-                  rule = res.get("ruleId", "")
-                  props = res.get("properties", {})
-                  checks[rule] = props.get("score", props.get("risk"))
-          json.dump({"schema": "aedis.platform/scorecard-summary/v1",
-                     "generatedAt": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                     "repository": "${{ github.repository }}", "checks": checks},
-                    open("scorecard-summary.json", "w", encoding="utf-8"), indent=2)
-          EOF
 
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
@@ -56,6 +38,4 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: scorecard-summary
-          path: |
-            scorecard-summary.json
-            scorecard.sarif
+          path: scorecard.sarif
