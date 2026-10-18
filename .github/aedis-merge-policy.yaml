@@ -1,0 +1,18 @@
+# Política do portão de merge (lida sempre do branch padrão). O que não está aqui exige um humano.
+schema: aedis.platform/merge-policy/v1
+trustedAuthors: [jeffersonnlucas]
+humanRequiredPaths:
+  - ".github/**"
+  - CODEOWNERS
+  - SECURITY.md
+  - LICENSE
+  - "LICENSES/**"
+  - REUSE.toml
+  - "conformance/**"
+  - "policies/**"
+  - "semgrep/rules/**"
+requiredSummaries: [coverage-summary, sast-summary]
+coverageNoRegression: true
+maxChangedLines: 2000
+allowBreaking: false
+mergeMethod: squash

@@ -14,5 +14,8 @@ root.Subcommands.Add(platform);
 var org = new Command("org", "Organização GitHub: auditoria da régua de conformidade e guardrails.");
 org.Subcommands.Add(OrgAuditCommand.Create());
 root.Subcommands.Add(org);
+var pr = new Command("pr", "Pull requests: portão de merge pela política do repositório.");
+pr.Subcommands.Add(PrGateCommand.Create());
+root.Subcommands.Add(pr);
 
 return await root.Parse(args).InvokeAsync();
