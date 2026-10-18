@@ -4,10 +4,10 @@ description: >-
   quando há alertas no risco configurado que não estejam aceitos, com validade, em dast-accept.yaml.
 inputs:
   target-url:
-    description: URL da superfície exposta (ex.: http://localhost:8080/)
+    description: "URL da superfície exposta (ex.: http://localhost:8080/)"
     required: true
   accept-file:
-    description: Arquivo de aceites de risco (lista de pluginId, until, reason)
+    description: "Arquivo de aceites de risco (lista de pluginId, until, reason)"
     default: dast-accept.yaml
   fail-on:
     description: Risco mínimo que reprova (High ou Medium)
