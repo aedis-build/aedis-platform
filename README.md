@@ -64,3 +64,26 @@ Os níveis são **controles implementados e verificáveis**, não certificação
 ## Licença
 
 Apache-2.0. Veja [LICENSE](LICENSE) e [SECURITY.md](SECURITY.md).
+
+## Auditoria da organização (`aedis org audit`)
+
+Aplica a régua de conformidade a uma organização GitHub e aos seus repositórios: critérios do selo OpenSSF Best
+Practices por tier (`conformance/best-practices.yaml`), controles da organização (seção `organization` do mesmo
+arquivo: permissões do Actions, 2FA, Dependabot/secret scanning para repositórios novos, ruleset de organização),
+proteção viva do branch padrão e mínimos do OpenSSF Scorecard (`conformance/levels.yaml`). Gera, em inglês,
+`org-audit-summary.json` (schema `aedis.platform/org-audit/v1`), `org-audit.md` e `org-audit.html` (relatório
+autocontido no estilo dos scanners, com a organização, todos os critérios por repositório, checks obrigatórios e notas
+do Scorecard por check). Com `--apply` aplica os guardrails do nível em toda a organização de uma vez: ruleset de
+organização `aedis-main` para o branch padrão de todos os repositórios, permissões de workflow do Actions (token só
+leitura, sem aprovar PRs), configurações de segurança da org e o ruleset de cada repositório com os checks informados.
+2FA não tem API de escrita e segue como item a ligar na UI da organização.
+
+```bash
+aedis org audit --org minha-org --level 3 --out ./auditoria
+aedis org audit --org minha-org --level 3 --apply --required-check "ci / build"
+```
+
+Autenticação: `GITHUB_TOKEN`/`GH_TOKEN` ou a sessão do `gh`. Com `--apply`, o token precisa de administração
+dos repositórios e `--required-check` é obrigatório: informe só checks que rodam em toda PR (um job com filtro de
+`paths` como check obrigatório trava o branch); sem a opção o comando lista os checks verdes de cada repositório e sai com 2. Por padrão o papel de administrador pode contornar o ruleset via PR (fica auditável); use
+`--no-admin-bypass` quando houver dois ou mais mantenedores.

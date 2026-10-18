@@ -125,6 +125,9 @@ public static partial class ConformanceChecker
         /// <summary>Baseline, Hardened, Regulated.</summary>
         public string Name { get; set; } = "";
 
+        /// <summary>Mínimos do OpenSSF Scorecard exigidos pelo nível; nulo quando o nível não os define.</summary>
+        public ScorecardMinimum? Scorecard { get; set; }
+
         /// <summary>Controles do nível.</summary>
         public List<ControlDefinition> Controls { get; set; } = [];
     }
@@ -153,4 +156,14 @@ public static partial class ConformanceChecker
 
     [GeneratedRegex(@"waf:\s*true")]
     private static partial Regex WafTrue();
+
+    /// <summary>Mínimos do OpenSSF Scorecard exigidos por um nível: nota agregada e notas por check.</summary>
+    public sealed class ScorecardMinimum
+    {
+        /// <summary>Nota agregada mínima (0 a 10).</summary>
+        public double MinScore { get; set; }
+
+        /// <summary>Nota mínima por check do Scorecard.</summary>
+        public Dictionary<string, double> Checks { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+    }
 }

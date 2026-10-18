@@ -11,5 +11,8 @@ platform.Subcommands.Add(InitCommand.Create());
 platform.Subcommands.Add(NewAppCommand.Create());
 platform.Subcommands.Add(ValidateCommand.Create());
 root.Subcommands.Add(platform);
+var org = new Command("org", "Organização GitHub: auditoria da régua de conformidade e guardrails.");
+org.Subcommands.Add(OrgAuditCommand.Create());
+root.Subcommands.Add(org);
 
 return await root.Parse(args).InvokeAsync();
