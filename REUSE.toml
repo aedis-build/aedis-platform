@@ -1,6 +1,6 @@
 version = 1
 SPDX-PackageName = "aedis-platform"
-SPDX-PackageSupplier = "Aedis <security@aedis.dev>"
+SPDX-PackageSupplier = "Aedis <security@aedis.build>"
 SPDX-PackageDownloadLocation = "https://github.com/aedis-build/aedis-platform"
 
 # Todo arquivo do repositório é Apache-2.0 e copyright Aedis; a anotação central evita cabeçalhos em YAML/JSON/Helm.
