@@ -26,6 +26,10 @@ on:
         description: Publicar no nuget.org (exige o secret NUGET_API_KEY)
         type: boolean
         default: true
+      platform-ref:
+        description: Ref do aedis-platform de onde vem o gerador de notas (padrão, o mesmo commit deste workflow)
+        type: string
+        default: ""
     secrets:
       NUGET_API_KEY:
         required: false
@@ -48,6 +52,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.tag }}
+          fetch-depth: 0 # histórico e tags: as notas comparam com a release anterior
+          persist-credentials: false
+      - name: Scripts do aedis-platform
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aedis-build/aedis-platform
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
+          path: .aedis-platform
           persist-credentials: false
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
@@ -97,12 +109,19 @@ jobs:
           set -euo pipefail
           [ -n "$NUGET_API_KEY" ] || { echo "::error::secret NUGET_API_KEY ausente (passe secrets.NUGET_API_KEY ou publish-nuget: false)"; exit 1; }
           dotnet nuget push "$FEED"/*.nupkg --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
-      - name: GitHub Release com pacotes, assinaturas, SBOM e proveniência
+      # Notas legíveis com o impacto da atualização (Conventional Commits desde a tag anterior), não o log cru.
+      - name: Notas da release
+        run: |
+          set -euo pipefail
+          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "$TAG^" 2>/dev/null || true)"
+          range="$TAG"; [ -n "$previous" ] && range="$previous..$TAG"
+          python3 .aedis-platform/scripts/release-notes.py --repo "$GITHUB_REPOSITORY" --tag "$TAG" --range "$range" --out artifacts/release-notes.md
+      - name: GitHub Release com notas, pacotes, assinaturas, SBOM e proveniência
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag \
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file artifacts/release-notes.md --verify-tag \
             "$FEED"/*.nupkg "$FEED"/*.sigstore.json \
             "artifacts/$NAME-$TAG.spdx.json" "artifacts/$NAME-$TAG.spdx.json.sigstore.json" \
             "artifacts/$NAME-$TAG.intoto.jsonl"

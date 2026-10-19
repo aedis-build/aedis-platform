@@ -101,6 +101,11 @@ também publica `deps-summary.json` (`aedis.platform/deps-summary/v1`: vulnerabi
 gate em High/Critical com aceites em `deps-accept.yaml`), e o `build-image.yml` emite a atestação de proveniência do
 GitHub e a verifica com `gh attestation verify` antes de declarar sucesso.
 
+O `release-nuget.yml` gera as notas de cada release com `scripts/release-notes.py`: a partir dos Conventional
+Commits desde a tag anterior, abre com o impacto da atualização (quebras de compatibilidade e o texto do
+`BREAKING CHANGE`) e agrupa features, correções, dependências e manutenção, com link para cada PR e para o diff. É o
+que o critério `release_notes` do OpenSSF Best Practices pede: um resumo legível, não o log cru.
+
 ```bash
 aedis org audit --org minha-org --level 3 --out ./auditoria
 aedis org audit --org minha-org --level 3 --apply --required-check "ci / build"
