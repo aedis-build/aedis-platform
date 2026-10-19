@@ -80,9 +80,10 @@ levels:
   - id: 3
     name: Regulated
     # L3 fecha tudo que o processo controla em 10; fora da régua ficam só colaboração/atividade: Contributors
-    # (organizações distintas), Fuzzing (sem fuzzer .NET), CII-Best-Practices (coberto por BP-18/BP-26),
-    # Maintained/Packaging/CI-Tests (atividade ou -1 quando não se aplicam). Branch-Protection 9+ exige 2 aprovações
-    # e 10 dispensar bypass, o que pede um 2º mantenedor. Com estes mínimos a nota agregada fica em ≥ 9.0.
+    # (organizações distintas), CII-Best-Practices (coberto por BP-18/BP-26), Maintained/Packaging/CI-Tests
+    # (atividade ou -1 quando não se aplicam). Fuzzing conta: o Scorecard reconhece testes baseados em propriedades
+    # com FsCheck em C#/F# (além de ClusterFuzzLite e OSS-Fuzz). Branch-Protection 9+ exige 2 aprovações e 10
+    # dispensar bypass, o que pede um 2º mantenedor. Com estes mínimos a nota agregada fica em ≥ 9.5.
     scorecard:
       minScore: 9
       checks:
@@ -97,6 +98,7 @@ levels:
         Pinned-Dependencies: 10
         Code-Review: 10
         Signed-Releases: 10
+        Fuzzing: 10
         Branch-Protection: 8
     bestPractices: gold
     coverage:
