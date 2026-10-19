@@ -1,15 +1,19 @@
 # Pipeline padrão de um repositório de aplicação Aedis: Conventional Commits, testes com cobertura e gate,
-# SAST (Semgrep + regras Aedis), CodeQL e, em tag vX.Y.Z[-rc.N], build da imagem assinada com SBOM.
-# O template aedis-api/aedis-worker gera o caller.
+# SAST (Semgrep + regras Aedis), CodeQL, DAST opcional contra a app servida e, em tag vX.Y.Z[-rc.N], build da
+# imagem assinada com SBOM. Os templates aedis-api/aedis-worker (.NET) e site (Node) geram o caller.
 name: app-ci
 
 on:
   workflow_call:
     inputs:
-      solution:
-        description: Solução ou projeto de testes
+      language:
+        description: dotnet | node. Decide o workflow de cobertura, a linguagem do CodeQL e o setup do DAST.
         type: string
-        required: true
+        default: dotnet
+      solution:
+        description: Solução ou projeto de testes (dotnet)
+        type: string
+        default: ""
       dotnet-version:
         type: string
         default: 10.0.x
@@ -19,6 +23,22 @@ on:
       min-branch:
         type: number
         default: 0
+      coverage-script:
+        description: Script pnpm que roda os testes com cobertura (node)
+        type: string
+        default: test:coverage
+      coverage-reports:
+        description: Glob dos relatórios Cobertura gerados pelo script (node)
+        type: string
+        default: coverage/cobertura-coverage.xml
+      no-regression:
+        description: Falha se a cobertura de linhas cair em relação ao último run verde do branch base (L2+)
+        type: boolean
+        default: false
+      dast-start:
+        description: Comando que constrói e serve a app em http://localhost:8080 (ex. "pnpm build && pnpm start &"). Vazio = sem DAST.
+        type: string
+        default: ""
       image:
         description: Nome da imagem sem tag (ghcr.io/org/app). Vazio = não constrói imagem.
         type: string
@@ -60,6 +80,7 @@ jobs:
       platform-ref: ${{ inputs.platform-ref }}
 
   coverage:
+    if: inputs.language == 'dotnet'
     uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
     permissions:
       contents: read
@@ -69,6 +90,21 @@ jobs:
       dotnet-version: ${{ inputs.dotnet-version }}
       min-line: ${{ inputs.min-line }}
       min-branch: ${{ inputs.min-branch }}
+      no-regression: ${{ inputs.no-regression }}
+      platform-ref: ${{ inputs.platform-ref }}
+
+  coverage-js:
+    if: inputs.language == 'node'
+    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@d2a1fe7b17c366f71bd2a64108beae961569d21a # feat/js-gates (repinar em v1 após o merge)
+    permissions:
+      contents: read
+      actions: read
+    with:
+      script: ${{ inputs.coverage-script }}
+      reports: ${{ inputs.coverage-reports }}
+      min-line: ${{ inputs.min-line }}
+      min-branch: ${{ inputs.min-branch }}
+      no-regression: ${{ inputs.no-regression }}
       platform-ref: ${{ inputs.platform-ref }}
 
   sast:
@@ -78,6 +114,7 @@ jobs:
       security-events: write
     with:
       platform-ref: ${{ inputs.platform-ref }}
+      extra-configs: ${{ inputs.language == 'node' && 'p/javascript p/typescript p/react' || '' }}
 
   codeql:
     name: CodeQL
@@ -90,17 +127,54 @@ jobs:
         with:
           persist-credentials: false
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: inputs.language == 'dotnet'
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
       - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
         with:
-          languages: csharp
-          build-mode: autobuild
+          languages: ${{ inputs.language == 'node' && 'javascript-typescript' || 'csharp' }}
+          build-mode: ${{ inputs.language == 'node' && 'none' || 'autobuild' }}
       - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
 
+  # DAST (ZAP baseline) contra a app servida pelo comando dast-start; aceites em dast-accept.yaml do repositório.
+  dast:
+    if: inputs.dast-start != ''
+    name: DAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: inputs.language == 'dotnet'
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: inputs.language == 'node'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: inputs.language == 'node'
+        with:
+          node-version: "22"
+          cache: pnpm
+      - if: inputs.language == 'node'
+        run: pnpm install --frozen-lockfile
+      - name: Subir a app
+        env:
+          DAST_START: ${{ inputs.dast-start }}
+        run: |
+          set -euo pipefail
+          bash -c "$DAST_START"
+          curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
+      - uses: aedis-build/aedis-platform/.github/actions/dast@d2a1fe7b17c366f71bd2a64108beae961569d21a # feat/js-gates (repinar em v1 após o merge)
+        with:
+          target-url: http://localhost:8080/
+
   image:
-    if: inputs.image != '' && startsWith(github.ref, 'refs/tags/v')
-    needs: [coverage, sast]
+    # needs com job pulado: o if precisa de !cancelled() e checar o resultado do job de cobertura da linguagem.
+    if: ${{ !cancelled() && inputs.image != '' && startsWith(github.ref, 'refs/tags/v') && needs.sast.result == 'success' && (needs.coverage.result == 'success' || needs.coverage-js.result == 'success') }}
+    needs: [coverage, coverage-js, sast]
     uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
     permissions:
       contents: read
