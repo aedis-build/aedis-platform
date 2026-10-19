@@ -116,9 +116,10 @@ tiers:
       expected: silver
       osps: [GV]
     - id: BP-27
-      criterion: Continuous fuzzing of parsers and codecs
-      check: manual
-      note: no continuous fuzzer with .NET support is integrated yet; the criterion stays mapped until one is
+      criterion: Fuzzing or property-based testing of parsers recognized by the Scorecard Fuzzing check (FsCheck for .NET, ClusterFuzzLite, OSS-Fuzz)
+      check: scorecard
+      field: Fuzzing
+      expected: "10"
       osps: [SA]
 # Controles avaliados uma vez na organização (GET /orgs/{org}, permissões de workflow do Actions, rulesets de org).
 # `aedis org audit --apply` aplica os que têm API de escrita; 2FA só se liga na UI da organização.

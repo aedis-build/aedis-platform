@@ -58,7 +58,7 @@ Sem .NET: `scripts/render-tenant-template.sh` e `scripts/validate-apps.sh` fazem
 |---|---|
 | **L1 Baseline** | baseline de pod, schema, ESO, probes, PDB; Scorecard publicado; cobertura ≥ 60 % |
 | **L2 Hardened** | imagem assinada e pinada por digest, SBOM, Kyverno enforce, NetworkPolicy, PSA restricted, gate SAST; Scorecard ≥ 7; Best Practices silver; cobertura ≥ 75 % |
-| **L3 Regulated** | gate DAST, attestation verificada, prod só por PR, drift report, WAF declarado, evidências retidas; Scorecard ≥ 8; Best Practices gold; cobertura ≥ 85 % |
+| **L3 Regulated** | gate DAST, attestation verificada, prod só por PR, drift report, WAF declarado, evidências retidas; Scorecard ≥ 9 (todo check sob controle do processo em 10); Best Practices gold; cobertura ≥ 85 % |
 
 Os níveis são **controles implementados e verificáveis**, não certificação. Detalhes em `docs/conformance.md`.
 
