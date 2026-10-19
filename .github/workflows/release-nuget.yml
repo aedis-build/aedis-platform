@@ -19,7 +19,7 @@ on:
         type: string
         default: 10.0.x
       artifact-name:
-        description: Prefixo dos assets SBOM e proveniência na release (padrão: nome do repositório)
+        description: "Prefixo dos assets SBOM e proveniência na release (padrão: nome do repositório)"
         type: string
         default: ""
       publish-nuget:
@@ -102,4 +102,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag             "$FEED"/*.nupkg "$FEED"/*.sigstore.json             "artifacts/$NAME-$TAG.spdx.json" "artifacts/$NAME-$TAG.spdx.json.sigstore.json"             "artifacts/$NAME-$TAG.intoto.jsonl"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag \
+            "$FEED"/*.nupkg "$FEED"/*.sigstore.json \
+            "artifacts/$NAME-$TAG.spdx.json" "artifacts/$NAME-$TAG.spdx.json.sigstore.json" \
+            "artifacts/$NAME-$TAG.intoto.jsonl"
