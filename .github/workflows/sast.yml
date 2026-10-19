@@ -65,16 +65,17 @@ jobs:
           set -euo pipefail
           script=scripts/sast-summary.py; [ -f "$script" ] || script=.aedis-platform/scripts/sast-summary.py
           accept=""; [ -f "$ACCEPT_FILE" ] && accept="--accept $ACCEPT_FILE"
-          if python3 "$script" --input sast.json $accept --out sast-summary.json; then
+          if python3 "$script" --input sast.json $accept --out sast-summary.json --sarif-in sast.sarif --sarif-out sast.upload.sarif; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else
             echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
           fi
 
+      # SARIF já sem os achados aceitos em sast-accept.yaml: o code scanning mostra só o que o gate também cobra.
       - uses: github/codeql-action/upload-sarif@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
-        if: always()
+        if: always() && hashFiles('sast.upload.sarif') != ''
         with:
-          sarif_file: sast.sarif
+          sarif_file: sast.upload.sarif
           category: semgrep
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -2,7 +2,11 @@
 """Converte a saída JSON do Semgrep no sumário aedis.platform/sast-summary/v1 e aplica o gate: qualquer
 achado ERROR não aceito falha. Aceites (sast-accept.yaml) têm rule, path (prefixo), until (AAAA-MM-DD) e reason.
 
-Uso: sast-summary.py --input semgrep.json [--accept sast-accept.yaml] [--out sast-summary.json] [--self-test]
+Com --sarif-in/--sarif-out grava o SARIF sem os achados aceitos, para o code scanning do GitHub refletir a mesma
+decisão do gate (um aceite não vira alerta aberto).
+
+Uso: sast-summary.py --input semgrep.json [--accept sast-accept.yaml] [--out sast-summary.json]
+     [--sarif-in sast.sarif --sarif-out sast.upload.sarif] [--self-test]
 """
 import argparse, json, sys
 from datetime import date, datetime, timezone
@@ -33,12 +37,32 @@ def summarize(results, accepts):
             "blocking": len(blocking), "accepted": sum(1 for f in findings if f["accepted"]), "findings": findings}
 
 
+def is_accepted(rule, path, accepts):
+    return any(a["rule"] == rule and path.startswith(a.get("path", "")) for a in accepts)
+
+
+def filter_sarif(sarif, accepts):
+    for run in sarif.get("runs", []):
+        kept = []
+        for r in run.get("results", []):
+            locs = r.get("locations") or [{}]
+            path = locs[0].get("physicalLocation", {}).get("artifactLocation", {}).get("uri", "")
+            if not is_accepted(r.get("ruleId"), path, accepts):
+                kept.append(r)
+        run["results"] = kept
+    return sarif
+
+
 def self_test():
     results = [{"check_id": "r1", "path": "src/a.cs", "start": {"line": 3}, "extra": {"severity": "ERROR", "message": "m"}},
                {"check_id": "r2", "path": "src/b.cs", "start": {"line": 9}, "extra": {"severity": "WARNING", "message": "m"}}]
     assert summarize(results, [])["result"] == "fail"
     assert summarize(results, [{"rule": "r1", "path": "src/", "reason": "x", "until": "2999-01-01"}])["result"] == "pass"
     assert summarize([], [])["result"] == "pass"
+    sarif = {"runs": [{"results": [
+        {"ruleId": "r1", "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/a.cs"}}}]},
+        {"ruleId": "r2", "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/b.cs"}}}]}]}]}
+    assert [r["ruleId"] for r in filter_sarif(sarif, [{"rule": "r1", "path": "src/", "reason": "x", "until": "2999-01-01"}])["runs"][0]["results"]] == ["r2"]
     print("self-test ok")
 
 
@@ -47,13 +71,19 @@ def main():
     a.add_argument("--input")
     a.add_argument("--accept")
     a.add_argument("--out", default="sast-summary.json")
+    a.add_argument("--sarif-in")
+    a.add_argument("--sarif-out")
     a.add_argument("--self-test", action="store_true")
     args = a.parse_args()
     if args.self_test:
         self_test(); return 0
     data = json.load(open(args.input, encoding="utf-8"))
-    summary = summarize(data.get("results", []), load_accepts(args.accept))
+    accepts = load_accepts(args.accept)
+    summary = summarize(data.get("results", []), accepts)
     json.dump(summary, open(args.out, "w", encoding="utf-8"), indent=2)
+    if args.sarif_in and args.sarif_out:
+        sarif = filter_sarif(json.load(open(args.sarif_in, encoding="utf-8")), accepts)
+        json.dump(sarif, open(args.sarif_out, "w", encoding="utf-8"))
     c = summary["counts"]
     print(f"SAST: {c['ERROR']} error, {c['WARNING']} warning, {c['INFO']} info; {summary['accepted']} aceitos; {summary['blocking']} bloqueantes")
     for f in summary["findings"]:
