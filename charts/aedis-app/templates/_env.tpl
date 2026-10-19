@@ -93,7 +93,7 @@ values (framework.enabled); container.env e framework.env são mesclados por úl
   valueFrom:
     fieldRef:
       fieldPath: metadata.name
-{{- if .Values.framework.enabled }}
+{{- if and .Values.framework.enabled (ne .Values.type "site") }}
 {{- include "aedis.frameworkEnv" . }}
 {{- end }}
 {{- if and .Values.observability.otlp.endpoint .Values.observability.otlp.apiKeySecretKey }}

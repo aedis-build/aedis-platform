@@ -104,6 +104,21 @@ public sealed class OrgAuditTests
     }
 
     [Fact]
+    public void Caller_unico_do_aedis_ci_conta_como_analise_estatica_e_conventional_commits() {
+        const string caller = """
+            name: aedis-ci
+            on: [pull_request]
+            permissions: {}
+            jobs:
+              aedis:
+                uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc
+            """;
+        var audit = RepoAuditor.Evaluate(Snapshot(3, workflow: caller, scorecard: Gold()), 3, Root);
+
+        audit.Items.Where(i => i.Id is "BP-05" or "BP-15").Should().OnlyContain(i => i.Status == "pass");
+    }
+
+    [Fact]
     public void Repositorio_completo_alcanca_L3_e_itens_manuais_nao_bloqueiam() {
         var audit = RepoAuditor.Evaluate(Snapshot(3, scorecard: Gold()), 3, Root);
 

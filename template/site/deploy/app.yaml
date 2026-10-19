@@ -1,0 +1,24 @@
+# Values do chart aedis-app (Aedis Platform) para este site. Vai para apps/__AEDIS_NAME__/app.yaml no repo GitOps.
+name: __AEDIS_NAME__
+namespace: default
+type: site
+image:
+  repository: ghcr.io/__AEDIS_ORG__/__AEDIS_NAME__
+resources:
+  requests: { cpu: 100m, memory: 256Mi }
+  limits: { cpu: 500m, memory: 512Mi }
+# uid/gid nonroot das imagens gcr.io/distroless/*:nonroot; o cache do Next é o único caminho gravável.
+security:
+  uid: 65532
+  gid: 65532
+  writablePaths:
+    - path: /app/.next/cache
+      sizeLimit: 256Mi
+observability:
+  metrics:
+    enabled: false
+ingress:
+  enabled: false
+  hosts: [__AEDIS_NAME__.example.com]
+  edge:
+    waf: false

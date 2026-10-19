@@ -1,0 +1,203 @@
+# Pipeline único de qualidade de um repositório Aedis (.NET ou Node): Conventional Commits, testes com cobertura e
+# gate, Codecov opcional, SAST (Semgrep + regras Aedis), CodeQL, REUSE e DAST opcional contra a app servida. O
+# repositório tem um único caller (.github/workflows/aedis-ci.yml) que chama este workflow pinado por SHA; o conteúdo
+# do pipeline é da plataforma, e o repositório não tira etapas sem mudar o pin (que passa por revisão humana).
+# Ficam fora, por restrição do GitHub ou de segurança: o portão de merge (workflow_run, sempre da versão de main),
+# o Scorecard (só publica num workflow com o job dele) e a release/imagem (outro gatilho e permissões de escrita).
+#
+# Permissões que o caller concede ao job que chama este workflow (o GitHub valida na largada, mesmo para jobs
+# pulados): contents: read, actions: read, packages: read, security-events: write, id-token: write.
+name: aedis-ci
+
+on:
+  workflow_call:
+    inputs:
+      language:
+        description: dotnet | node. Decide o workflow de cobertura, a linguagem do CodeQL e o setup do DAST.
+        type: string
+        default: dotnet
+      solution:
+        description: Solução ou projeto de testes (dotnet)
+        type: string
+        default: ""
+      dotnet-version:
+        type: string
+        default: 10.0.x
+      test-env:
+        description: Variáveis de ambiente do dotnet test, uma por linha (KEY=VALUE), ex. para ligar suítes de integração opt-in (dotnet)
+        type: string
+        default: ""
+      min-line:
+        type: number
+        default: 60
+      min-branch:
+        type: number
+        default: 0
+      coverage-script:
+        description: Script pnpm que roda os testes com cobertura (node)
+        type: string
+        default: test:coverage
+      coverage-reports:
+        description: Glob dos relatórios Cobertura gerados pelo script (node)
+        type: string
+        default: coverage/cobertura-coverage.xml
+      no-regression:
+        description: Falha se a cobertura de linhas cair em relação ao último run verde do branch base (L2+)
+        type: boolean
+        default: false
+      codecov:
+        description: Envia o Cobertura ao Codecov por OIDC (exige a GitHub App do Codecov na organização)
+        type: boolean
+        default: false
+      reuse:
+        description: Roda o REUSE lint (licença e copyright em todo arquivo)
+        type: boolean
+        default: true
+      dast-start:
+        description: Comando que constrói e serve a app em http://localhost:8080 (ex. "pnpm build && pnpm start &"). Vazio = sem DAST.
+        type: string
+        default: ""
+      platform-ref:
+        type: string
+        default: v1
+
+permissions: {}
+
+jobs:
+  commits:
+    if: github.event_name == 'pull_request'
+    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
+    permissions:
+      contents: read
+    with:
+      platform-ref: ${{ inputs.platform-ref }}
+
+  coverage:
+    if: inputs.language == 'dotnet' && github.event_name != 'schedule'
+    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
+    permissions:
+      contents: read
+      packages: read
+    with:
+      solution: ${{ inputs.solution }}
+      dotnet-version: ${{ inputs.dotnet-version }}
+      min-line: ${{ inputs.min-line }}
+      min-branch: ${{ inputs.min-branch }}
+      no-regression: ${{ inputs.no-regression }}
+      test-env: ${{ inputs.test-env }}
+      platform-ref: ${{ inputs.platform-ref }}
+
+  coverage-js:
+    if: inputs.language == 'node' && github.event_name != 'schedule'
+    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@5a8d6dc41147c93beffd7a821a72068ce2a3315a # feat/js-gates (repinar em main após o merge)
+    permissions:
+      contents: read
+      actions: read
+    with:
+      script: ${{ inputs.coverage-script }}
+      reports: ${{ inputs.coverage-reports }}
+      min-line: ${{ inputs.min-line }}
+      min-branch: ${{ inputs.min-branch }}
+      no-regression: ${{ inputs.no-regression }}
+      platform-ref: ${{ inputs.platform-ref }}
+
+  # Cobertura mesclada do mesmo run (artefato coverage-summary) enviada por OIDC, sem token.
+  codecov:
+    name: Codecov
+    if: ${{ !cancelled() && inputs.codecov && (needs.coverage.result == 'success' || needs.coverage-js.result == 'success') }}
+    needs: [coverage, coverage-js]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      # Checkout só para o uploader enviar a lista de arquivos do repositório: sem ela o Codecov não casa os caminhos
+      # absolutos do runner no Cobertura com o repositório e descarta o relatório (estado error, 0 arquivos).
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: coverage-summary
+          path: coverage-summary
+      - uses: codecov/codecov-action@2320916714171c258d01dbd81040d64d798c6f8e # v7.1.1
+        with:
+          use_oidc: true
+          files: ${{ inputs.language == 'node' && format('coverage-summary/{0}', inputs.coverage-reports) || 'coverage-summary/coverage/Cobertura.xml' }}
+          fail_ci_if_error: true
+
+  sast:
+    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
+    permissions:
+      contents: read
+      security-events: write
+    with:
+      platform-ref: ${{ inputs.platform-ref }}
+      extra-configs: ${{ inputs.language == 'node' && 'p/javascript p/typescript p/react' || '' }}
+
+  codeql:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: inputs.language == 'dotnet'
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+        with:
+          languages: ${{ inputs.language == 'node' && 'javascript-typescript' || 'csharp' }}
+          build-mode: ${{ inputs.language == 'node' && 'none' || 'autobuild' }}
+      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+
+  reuse:
+    name: REUSE
+    if: inputs.reuse && github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: pipx run reuse==5.0.2 lint
+
+  # DAST (ZAP baseline) contra a app servida pelo comando dast-start; aceites em dast-accept.yaml do repositório.
+  dast:
+    if: inputs.dast-start != '' && github.event_name != 'schedule'
+    name: DAST
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        if: inputs.language == 'dotnet'
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: inputs.language == 'node'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: inputs.language == 'node'
+        with:
+          node-version: "22"
+          cache: pnpm
+      - if: inputs.language == 'node'
+        run: pnpm install --frozen-lockfile
+      - name: Subir a app
+        env:
+          DAST_START: ${{ inputs.dast-start }}
+        run: |
+          set -euo pipefail
+          bash -c "$DAST_START"
+          curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
+      - uses: aedis-build/aedis-platform/.github/actions/dast@5a8d6dc41147c93beffd7a821a72068ce2a3315a # feat/js-gates (repinar em main após o merge)
+        with:
+          target-url: http://localhost:8080/

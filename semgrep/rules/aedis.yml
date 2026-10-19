@@ -1,5 +1,6 @@
-# Regras SAST conscientes do framework Aedis. Complementam os rulesets públicos (p/owasp-top-ten, p/secrets,
-# p/csharp). Cada regra tem fixture em semgrep/tests (semgrep --test). Sem regras de negócio.
+# Regras SAST conscientes do framework Aedis (C#/JSON) e do Aedis UI (TypeScript/React). Complementam os rulesets
+# públicos (p/owasp-top-ten, p/secrets, p/csharp e, em repositórios JS, p/javascript p/typescript p/react via
+# extra-configs). Cada regra tem fixture em semgrep/tests (semgrep --test). Sem regras de negócio.
 rules:
   - id: aedis.enable-authentication-false
     languages: [csharp]
@@ -122,3 +123,43 @@ rules:
     metadata: { category: security, cwe: "CWE-798", owasp: "A07:2021", aedis-control: PLT-02 }
     paths: { exclude: ["appsettings.Development.json"] }
     pattern-regex: '"(ConnectionString|Password|ClientSecret|ApiKey|Secret|Token|AccessKey|SecretAccessKey|PrivateKeyPem)"\s*:\s*"(?!\s*"|\$\{)[^"]{6,}"'
+
+  # Regras JavaScript/TypeScript (React). Repositórios JS chamam sast.yml com extra-configs: p/javascript p/typescript p/react.
+  - id: aedis.dangerously-set-inner-html
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "dangerouslySetInnerHTML turns text into markup. Agent and user content is data: render it as text or through the Markdown component."
+    metadata: { category: security, cwe: "CWE-79", owasp: "A03:2021", aedis-control: PLT-13 }
+    pattern-regex: 'dangerouslySetInnerHTML'
+
+  - id: aedis.rehype-raw
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "rehype-raw renders raw HTML inside markdown, which defeats the Markdown component's protection. Remove it."
+    metadata: { category: security, cwe: "CWE-79", owasp: "A03:2021", aedis-control: PLT-13 }
+    pattern-regex: 'from\s+["'']rehype-raw["'']|require\(\s*["'']rehype-raw["'']\s*\)'
+
+  - id: aedis.secret-in-web-storage
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "A token or session in localStorage/sessionStorage is readable by any script on the page. Keep the session in an HttpOnly cookie and call the backend with api()."
+    metadata: { category: security, cwe: "CWE-922", owasp: "A07:2021", aedis-control: PLT-13 }
+    pattern-regex: '(?i)(localStorage|sessionStorage)\.setItem\(\s*["''][^"'']*(token|jwt|secret|session|password|credential)'
+
+  - id: aedis.fetch-credentials-include
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: "credentials: \"include\" sends the session cookie to another origin. Call your own backend with api(), which stays same-origin."
+    metadata: { category: security, cwe: "CWE-200", aedis-control: PLT-13 }
+    pattern-regex: 'credentials:\s*["'']include["'']'
+
+  - id: aedis.raw-text-field
+    languages: [typescript, javascript]
+    severity: WARNING
+    message: "A raw <input> or <textarea> has no length limit unless you remember one. Use @aedis/input or @aedis/textarea, which are bounded by default."
+    metadata: { category: security, cwe: "CWE-20", aedis-control: PLT-13 }
+    pattern-regex: '<(textarea|input)\b'
+    paths:
+      exclude:
+        - "**/registry/aedis/ui/input.tsx"
+        - "**/registry/aedis/ui/textarea.tsx"

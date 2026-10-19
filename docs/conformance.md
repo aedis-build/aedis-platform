@@ -12,6 +12,13 @@ Practices e cobertura de código; os controles de plataforma (`PLT-xx`) somam a 
 
 Os limiares vivem em `conformance/levels.yaml`; um tenant pode subi-los, nunca baixá-los.
 
+A régua é a mesma para qualquer linguagem. Em .NET a cobertura vem do `coverage.yml` (coverlet) e em
+JavaScript/TypeScript do `coverage-js.yml` (pnpm + reporter Cobertura do vitest/jest); os dois aplicam o mesmo
+`scripts/coverage-gate.py` e publicam o mesmo `coverage-summary.json`. O `sast.yml` traz regras Aedis para C# e
+TypeScript/React (repositórios JS acrescentam `extra-configs: p/javascript p/typescript p/react`). Para o check
+*Fuzzing* do Scorecard, testes baseados em propriedades contam: FsCheck em C#/F# e fast-check em
+JavaScript/TypeScript, além de ClusterFuzzLite e OSS-Fuzz.
+
 ## Controles de plataforma (resumo)
 
 | ID | Controle | Onde | Mapeamentos |

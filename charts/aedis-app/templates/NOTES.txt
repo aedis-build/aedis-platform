@@ -2,4 +2,4 @@
 Imagem: {{ include "aedis.image" . }}
 Segredos: {{ if or .Values.secrets.keys .Values.secrets.dataFrom }}ExternalSecret via {{ .Values.secrets.store.kind }}/{{ .Values.secrets.store.name }} (provider {{ include "aedis.secretsProvider" . }}){{ else }}nenhum{{ end }}
 Identidade: {{ if .Values.identity.enabled }}{{ .Values.cloud.provider }} ({{ include "aedis.serviceAccountName" . }}){{ else }}desligada{{ end }}
-Ingress: {{ if and .Values.ingress.enabled (eq .Values.type "api") }}{{ .Values.ingress.preset }} {{ join ", " .Values.ingress.hosts }}{{ else }}nenhum{{ end }}
+Ingress: {{ if and .Values.ingress.enabled (include "aedis.isServed" .) }}{{ .Values.ingress.preset }} {{ join ", " .Values.ingress.hosts }}{{ else }}nenhum{{ end }}

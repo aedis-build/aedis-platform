@@ -1,7 +1,7 @@
 apiVersion: v2
 name: aedis-app
 description: >-
-  Chart do Aedis Platform para aplicações api, worker e cronjob: baseline de segurança sempre ligado,
+  Chart do Aedis Platform para aplicações api, worker, cronjob e site: baseline de segurança sempre ligado,
   Argo Rollouts canário com análise, ExternalSecret (AWS Secrets Manager, Azure Key Vault, Vault),
   identidade de workload (IRSA, Azure Workload Identity), KEDA/HPA, ServiceMonitor, PDB, NetworkPolicy
   anti-SSRF e presets opcionais de ingress (nginx, ALB, AGIC, Kong) e de observabilidade.

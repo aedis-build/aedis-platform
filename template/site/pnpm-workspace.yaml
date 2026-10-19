@@ -1,0 +1,5 @@
+# Cadeia de suprimento: sem dependências transitivas de git/tarball/URL; uma versão nova precisa ter uma semana
+# (o mesmo cooldown do Dependabot) antes de ser instalada; uma atualização nunca resolve para versão menor que a do lockfile.
+blockExoticSubdeps: true
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade

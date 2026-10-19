@@ -1,0 +1,6 @@
+node_modules
+.next
+coverage
+site.log
+next-env.d.ts
+*.tsbuildinfo

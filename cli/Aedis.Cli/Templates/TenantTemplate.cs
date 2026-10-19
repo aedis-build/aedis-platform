@@ -69,14 +69,14 @@ public static class TenantTemplate
     public static string EnvironmentClass(string environment) =>
         environment is "prod" or "production" or "prd" ? "prod" : "nonprod";
 
-    /// <summary>Lê todos os arquivos embarcados do template (caminho relativo → conteúdo).</summary>
-    public static IReadOnlyDictionary<string, string> ReadEmbedded() {
+    /// <summary>Lê todos os arquivos embarcados de um template (caminho relativo → conteúdo); por padrão o do tenant.</summary>
+    public static IReadOnlyDictionary<string, string> ReadEmbedded(string prefix = Prefix) {
         var assembly = Assembly.GetExecutingAssembly();
         var files = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith(Prefix, StringComparison.Ordinal))) {
+        foreach (var name in assembly.GetManifestResourceNames().Where(n => n.StartsWith(prefix, StringComparison.Ordinal))) {
             using var stream = assembly.GetManifestResourceStream(name)!;
             using var reader = new StreamReader(stream, Encoding.UTF8);
-            files[name[Prefix.Length..].Replace('\\', '/')] = reader.ReadToEnd();
+            files[name[prefix.Length..].Replace('\\', '/')] = reader.ReadToEnd();
         }
 
         return files;

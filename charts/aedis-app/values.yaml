@@ -5,7 +5,8 @@
 # --- identidade do app (app.yaml) ---
 name: ""
 namespace: ""
-# api | worker | cronjob
+# api | worker | cronjob | site. Um site é servido como uma api (Service, Ingress, HPA, PDB, NetworkPolicy, WAF
+# declarado) mas não é um host Aedis .NET: o chart não injeta as variáveis do framework e as probes HTTP ficam em "/".
 type: api
 # Time dono (slug; vai para a label aedis.build/owner e para o portal).
 owner: ""
@@ -26,7 +27,7 @@ cloud:
 
 # Integração com o framework Aedis: o chart deriva as variáveis de ambiente que configuram o host
 # (ASPNETCORE_ENVIRONMENT, Telemetry__*, Security__ForwardedHeaders__*, Security__HostHeaders__*...).
-# Desligue para usar o chart com uma app que não é Aedis.
+# Desligue para usar o chart com uma app que não é Aedis (type site já ignora este bloco).
 framework:
   enabled: true
   # Sobrescreve o ASPNETCORE_ENVIRONMENT/DOTNET_ENVIRONMENT derivado de environmentClass.
@@ -54,7 +55,7 @@ image:
 replicas: 1
 
 availability:
-  # Piso de réplicas de type api em todos os ambientes (vale para replicas e minReplicas do HPA/KEDA). 0 desliga.
+  # Piso de réplicas de type api e site em todos os ambientes (vale para replicas e minReplicas do HPA/KEDA). 0 desliga.
   apiMinReplicas: 2
   # PDB quando o mínimo efetivo de réplicas é >= 2 (com 1 réplica o PDB só trava o dreno do nó).
   pdb:
@@ -110,6 +111,7 @@ resources:
     cpu: 500m
     memory: 512Mi
 
+# Em type site os caminhos padrão (/health/*) viram "/"; um caminho explícito diferente é respeitado.
 probes:
   enabled: true
   liveness:
@@ -189,7 +191,7 @@ secrets:
     azureVaultUri: ""
     vaultAddress: ""
 
-# Exposição HTTP (só type api).
+# Exposição HTTP (type api e site).
 ingress:
   enabled: false
   # nginx | alb | agic | kong | do-nginx | none. Cada preset injeta as anotações/CRDs do controlador.

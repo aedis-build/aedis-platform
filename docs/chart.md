@@ -8,7 +8,7 @@ Values em três camadas (mapas mesclam, listas substituem): `platform/values/<en
 | Chave | Descrição |
 |---|---|
 | `name`, `namespace` | obrigatórios; `name` é o nome do diretório em `apps/` |
-| `type` | `api` (Rollout + Service + Ingress), `worker` (Rollout + Service de métricas), `cronjob` |
+| `type` | `api` (Rollout + Service + Ingress), `worker` (Rollout + Service de métricas), `cronjob`, `site` (como `api`, sem as variáveis do framework Aedis e com probes em `/`) |
 | `environment` | nome livre do ambiente (labels, `deployment.environment`) |
 | `environmentClass` | `nonprod` \| `prod` — decide `ASPNETCORE_ENVIRONMENT`, HSTS e a exigência de `image.digest` |
 | `cloud.provider`, `cloud.region` | `aws` \| `azure` \| `digitalocean` \| `generic`; define defaults de identidade, cofre e KEDA |
@@ -51,7 +51,7 @@ adicionais (`<name>-<extra>`). `secrets.keyTemplate` (tpl com `.prefix`, `.key`,
 `secrets.runtime` injeta `AwsSecretsManager__Region` / `AzureKeyVault__VaultUri` / `Vault__Address` para apps
 que leem o cofre em runtime com `Aedis.Secrets`.
 
-## Ingress (`ingress`, só `type: api`)
+## Ingress (`ingress`, só `type: api` e `site`)
 
 `preset`: `nginx` (default), `alb`, `agic`, `kong`, `do-nginx`, `none`. Cada preset injeta a `ingressClassName` e
 as anotações do controlador; `ingress.annotations` é mesclado por último. `ingress.hosts` alimenta também

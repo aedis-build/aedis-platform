@@ -60,9 +60,14 @@ azure.workload.identity/use: "true"
 {{- else -}}{{ .Values.type }}{{- end -}}
 {{- end -}}
 
+{{/* api e site são servidos a usuários: Service HTTP, Ingress, piso de réplicas e análise HTTP do canário. */}}
+{{- define "aedis.isServed" -}}
+{{- if has .Values.type (list "api" "site") -}}true{{- end -}}
+{{- end -}}
+
 {{- define "aedis.portName" -}}
 {{- if .Values.container.portName -}}{{ .Values.container.portName }}
-{{- else if eq .Values.type "api" -}}http
+{{- else if include "aedis.isServed" . -}}http
 {{- else -}}health{{- end -}}
 {{- end -}}
 
@@ -117,9 +122,14 @@ capabilities:
     - ALL
 {{- end -}}
 
+{{/* Um site serve páginas, não /health/*: os caminhos padrão do chart viram "/"; outro caminho explícito é respeitado. */}}
+{{- define "aedis.probePath" -}}
+{{- if and (eq .root.Values.type "site") (has .path (list "/health/live" "/health/ready")) -}}/{{- else -}}{{ .path }}{{- end -}}
+{{- end -}}
+
 {{- define "aedis.probe" -}}
 httpGet:
-  path: {{ .p.path }}
+  path: {{ include "aedis.probePath" (dict "root" .root "path" .p.path) }}
   port: {{ .port }}
   scheme: HTTP
 initialDelaySeconds: {{ .p.initialDelaySeconds }}
@@ -131,9 +141,9 @@ successThreshold: 1
 {{- end }}
 {{- end -}}
 
-{{/* Piso de réplicas: só type api. */}}
+{{/* Piso de réplicas: só api e site. */}}
 {{- define "aedis.replicaFloor" -}}
-{{- if eq .Values.type "api" -}}{{ int .Values.availability.apiMinReplicas }}{{- else -}}0{{- end -}}
+{{- if include "aedis.isServed" . -}}{{ int .Values.availability.apiMinReplicas }}{{- else -}}0{{- end -}}
 {{- end -}}
 
 {{- define "aedis.replicas" -}}
@@ -215,7 +225,7 @@ successThreshold: 1
 {{- define "aedis.analysisTemplates" -}}
 {{- if .Values.rollout.analysis.templates -}}
 {{ toYaml .Values.rollout.analysis.templates }}
-{{- else if eq .Values.type "api" -}}
+{{- else if include "aedis.isServed" . -}}
 - aedis-http-success-rate
 - aedis-http-p95-latency
 - aedis-pod-restarts
@@ -312,11 +322,11 @@ containers:
       {{- toYaml .Values.resources | nindent 6 }}
     {{- if .Values.probes.enabled }}
     livenessProbe:
-      {{- include "aedis.probe" (dict "p" .Values.probes.liveness "port" $port) | nindent 6 }}
+      {{- include "aedis.probe" (dict "root" . "p" .Values.probes.liveness "port" $port) | nindent 6 }}
     readinessProbe:
-      {{- include "aedis.probe" (dict "p" .Values.probes.readiness "port" $port) | nindent 6 }}
+      {{- include "aedis.probe" (dict "root" . "p" .Values.probes.readiness "port" $port) | nindent 6 }}
     startupProbe:
-      {{- include "aedis.probe" (dict "p" .Values.probes.startup "port" $port "startup" true) | nindent 6 }}
+      {{- include "aedis.probe" (dict "root" . "p" .Values.probes.startup "port" $port "startup" true) | nindent 6 }}
     {{- end }}
     {{- if gt (int .Values.container.preStopSeconds) 0 }}
     lifecycle:

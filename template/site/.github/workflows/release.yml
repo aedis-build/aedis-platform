@@ -1,0 +1,22 @@
+# Release do site: em tag vX.Y.Z, a imagem é construída, escaneada, assinada (cosign keyless), com SBOM e
+# proveniência pelo workflow reutilizável build-image do Aedis Platform. Separado do aedis-ci porque precisa de
+# permissões de escrita (pacotes, OIDC, atestações) que o CI de toda PR não deve ter.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  image:
+    uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@__AEDIS_PLATFORM_REF__
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    with:
+      image: ghcr.io/${{ github.repository_owner }}/__AEDIS_NAME__
+      version: ${{ github.ref_name }}

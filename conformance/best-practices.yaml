@@ -32,7 +32,7 @@ tiers:
     - id: BP-05
       criterion: Static analysis in CI (CodeQL or Semgrep)
       check: workflow-uses
-      pattern: "codeql-action|sast.yml|semgrep"
+      pattern: "codeql-action|sast.yml|semgrep|aedis-ci\\.yml"
       osps: [SA]
     - id: BP-06
       criterion: Dependencies updated automatically (Dependabot/Renovate)
@@ -63,7 +63,7 @@ tiers:
     - id: BP-15
       criterion: Conventional Commits and linear history
       check: workflow-uses
-      pattern: "conventional-commits.yml"
+      pattern: "conventional-commits.yml|aedis-ci\\.yml"
       osps: [QA]
     - id: BP-16
       criterion: Latest SAST run on the default branch has no unaccepted blocking findings
@@ -116,7 +116,7 @@ tiers:
       expected: silver
       osps: [GV]
     - id: BP-27
-      criterion: Fuzzing or property-based testing of parsers recognized by the Scorecard Fuzzing check (FsCheck for .NET, ClusterFuzzLite, OSS-Fuzz)
+      criterion: Fuzzing or property-based testing of parsers recognized by the Scorecard Fuzzing check (FsCheck for .NET, fast-check for JavaScript/TypeScript, ClusterFuzzLite, OSS-Fuzz)
       check: scorecard
       field: Fuzzing
       expected: "10"

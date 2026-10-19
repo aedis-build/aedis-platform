@@ -3,7 +3,7 @@ Preset kong: uma Ingress por rota, com os m√©todos dela (konghq.com/methods). S√
 listado em ingress.routes. Balanceamento e healthcheck num KongUpstreamPolicy ligado ao Service.
 */ -}}
 {{- $ing := .Values.ingress }}
-{{- if and $ing.enabled (eq .Values.type "api") (eq $ing.preset "kong") }}
+{{- if and $ing.enabled (include "aedis.isServed" .) (eq $ing.preset "kong") }}
 {{- $name := include "aedis.name" . }}
 {{- $ns := include "aedis.namespace" . }}
 {{- $k := $ing.kong }}
@@ -32,7 +32,7 @@ spec:
   healthchecks:
     active:
       type: http
-      httpPath: {{ .Values.probes.readiness.path }}
+      httpPath: {{ (include "aedis.probePath" (dict "root" . "path" .Values.probes.readiness.path)) }}
       timeout: 5
       healthy:
         successes: 2
