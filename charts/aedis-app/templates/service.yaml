@@ -12,7 +12,7 @@ metadata:
     {{- toYaml . | nindent 4 }}
     {{- end }}
   {{- $ann := deepCopy .Values.service.annotations }}
-  {{- if and (eq .Values.type "api") .Values.ingress.enabled (eq .Values.ingress.preset "kong") }}
+  {{- if and (include "aedis.isServed" .) .Values.ingress.enabled (eq .Values.ingress.preset "kong") }}
   {{- $_ := set $ann "konghq.com/upstream-policy" (printf "%s-upstream" $name) }}
   {{- end }}
   {{- with $ann }}
@@ -22,7 +22,7 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    {{- if eq .Values.type "api" }}
+    {{- if include "aedis.isServed" . }}
     - port: {{ .Values.container.port }}
       targetPort: {{ $portName }}
       protocol: TCP

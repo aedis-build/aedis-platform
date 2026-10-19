@@ -88,7 +88,7 @@ annotations:
   alb.ingress.kubernetes.io/ssl-redirect: "443"
   alb.ingress.kubernetes.io/ssl-policy: {{ $a.sslPolicy }}
   alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
-  alb.ingress.kubernetes.io/healthcheck-path: {{ $hc.path | default .Values.probes.readiness.path }}
+  alb.ingress.kubernetes.io/healthcheck-path: {{ $hc.path | default (include "aedis.probePath" (dict "root" . "path" .Values.probes.readiness.path)) }}
   alb.ingress.kubernetes.io/healthcheck-port: {{ .Values.container.port | quote }}
   alb.ingress.kubernetes.io/healthcheck-interval-seconds: {{ $hc.intervalSeconds | quote }}
   alb.ingress.kubernetes.io/healthcheck-timeout-seconds: {{ $hc.timeoutSeconds | quote }}
@@ -119,7 +119,7 @@ className: azure-application-gateway
 annotations:
   appgw.ingress.kubernetes.io/ssl-redirect: "true"
   appgw.ingress.kubernetes.io/backend-protocol: {{ $g.backendProtocol }}
-  appgw.ingress.kubernetes.io/health-probe-path: {{ .Values.probes.readiness.path }}
+  appgw.ingress.kubernetes.io/health-probe-path: {{ (include "aedis.probePath" (dict "root" . "path" .Values.probes.readiness.path)) }}
   appgw.ingress.kubernetes.io/health-probe-status-codes: "200"
   {{- with $g.sslCertificate }}
   appgw.ingress.kubernetes.io/appgw-ssl-certificate: {{ . }}

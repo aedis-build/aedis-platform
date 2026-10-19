@@ -1,0 +1,100 @@
+suite: type site (servido como api, sem framework Aedis)
+templates:
+  - rollout.yaml
+  - service.yaml
+  - ingress.yaml
+  - pdb.yaml
+  - networkpolicy.yaml
+tests:
+  - it: site tem Service http, Ingress, piso de 2 réplicas e PDB
+    values:
+      - ../ci/site-generic-nginx.yaml
+    asserts:
+      - equal:
+          path: spec.replicas
+          value: 2
+        template: rollout.yaml
+      - equal:
+          path: spec.template.spec.containers[0].ports[0].name
+          value: http
+        template: rollout.yaml
+      - contains:
+          path: spec.ports
+          content:
+            port: 8080
+            targetPort: http
+            protocol: TCP
+            name: http
+        template: service.yaml
+      - isKind:
+          of: Ingress
+        template: ingress.yaml
+      - equal:
+          path: spec.rules[0].host
+          value: portal.dev.example.com
+        template: ingress.yaml
+      - isKind:
+          of: PodDisruptionBudget
+        template: pdb.yaml
+      - hasDocuments:
+          count: 2
+        template: networkpolicy.yaml
+
+  - it: site não recebe as variáveis do framework e sonda "/"
+    template: rollout.yaml
+    values:
+      - ../ci/site-generic-nginx.yaml
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ASPNETCORE_ENVIRONMENT
+            value: Staging
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /
+      - equal:
+          path: spec.template.spec.containers[0].startupProbe.httpGet.path
+          value: /
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 65532
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: writable-0
+            mountPath: /app/.next/cache
+
+  - it: caminho de probe explícito do site é respeitado
+    template: rollout.yaml
+    values:
+      - ../ci/site-generic-nginx.yaml
+    set:
+      probes.readiness.path: /api/health
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /api/health
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /
+
+  - it: api continua com /health/* e as variáveis do framework
+    template: rollout.yaml
+    values:
+      - ../ci/api-generic-nginx.yaml
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].readinessProbe.httpGet.path
+          value: /health/ready
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: ASPNETCORE_ENVIRONMENT
+            value: Staging

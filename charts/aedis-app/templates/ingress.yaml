@@ -1,5 +1,5 @@
 {{- $ing := .Values.ingress }}
-{{- if and $ing.enabled (eq .Values.type "api") (ne $ing.preset "kong") }}
+{{- if and $ing.enabled (include "aedis.isServed" .) (ne $ing.preset "kong") }}
 {{- $name := include "aedis.name" . }}
 {{- if not $ing.hosts }}{{ fail "ingress.enabled exige ingress.hosts" }}{{ end }}
 {{- $preset := include "aedis.ingress.preset" . | fromYaml }}

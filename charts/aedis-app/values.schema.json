@@ -46,7 +46,10 @@
             }
           },
           "type": {
-            "const": "api"
+            "enum": [
+              "api",
+              "site"
+            ]
           }
         },
         "required": [
@@ -284,7 +287,8 @@
       "enum": [
         "api",
         "worker",
-        "cronjob"
+        "cronjob",
+        "site"
       ]
     },
     "owner": {
