@@ -116,7 +116,7 @@ tiers:
       expected: silver
       osps: [GV]
     - id: BP-27
-      criterion: Fuzzing or property-based testing of parsers recognized by the Scorecard Fuzzing check (FsCheck for .NET, ClusterFuzzLite, OSS-Fuzz)
+      criterion: Fuzzing or property-based testing of parsers recognized by the Scorecard Fuzzing check (FsCheck for .NET, fast-check for JavaScript/TypeScript, ClusterFuzzLite, OSS-Fuzz)
       check: scorecard
       field: Fuzzing
       expected: "10"
