@@ -49,16 +49,21 @@ public static class PrGateCommand
             var result = MergeGate.Evaluate(mergePolicy, snapshot);
             string? action = null;
 
+            // A App é quem aprova e quem comenta: o GITHUB_TOKEN do job é só leitura e a organização proíbe que ele aprove.
+            GitHubApi? app = null;
+            var id = parse.GetValue(appId) ?? Environment.GetEnvironmentVariable("AEDIS_APP_ID");
+            var key = parse.GetValue(appKey) ?? Environment.GetEnvironmentVariable("AEDIS_APP_PRIVATE_KEY");
+            if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(key)) {
+                if (File.Exists(key)) key = await File.ReadAllTextAsync(key, cancellationToken);
+                var installationToken = await api.CreateInstallationTokenAsync(orgName, GitHubAppAuth.CreateJwt(id, key), cancellationToken);
+                app = new GitHubApi(new HttpClient(handlerFactory?.Invoke() ?? new HttpClientHandler()), installationToken);
+            }
+
             if (result.Decision == "approve" && parse.GetValue(approve)) {
-                var id = parse.GetValue(appId) ?? Environment.GetEnvironmentVariable("AEDIS_APP_ID");
-                var key = parse.GetValue(appKey) ?? Environment.GetEnvironmentVariable("AEDIS_APP_PRIVATE_KEY");
-                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(key)) {
+                if (app is null) {
                     action = "approval skipped: no GitHub App credentials (AEDIS_APP_ID/AEDIS_APP_PRIVATE_KEY)";
                 }
                 else {
-                    if (File.Exists(key)) key = await File.ReadAllTextAsync(key, cancellationToken);
-                    var installationToken = await api.CreateInstallationTokenAsync(orgName, GitHubAppAuth.CreateJwt(id, key), cancellationToken);
-                    var app = new GitHubApi(new HttpClient(handlerFactory?.Invoke() ?? new HttpClientHandler()), installationToken);
                     await app.ApprovePullRequestAsync(orgName, repoName, snapshot.Number, $"{MergeGate.CommentMarker} every criterion of the merge policy passed for `{snapshot.HeadSha[..7]}`.", cancellationToken);
                     try {
                         await app.EnableAutoMergeAsync(snapshot.NodeId, mergePolicy.MergeMethod, cancellationToken);
@@ -79,7 +84,12 @@ public static class PrGateCommand
                 var marker = $"{MergeGate.CommentMarker} `{snapshot.HeadSha[..7]}`";
                 var comments = await api.ListIssueCommentsAsync(orgName, repoName, snapshot.Number, cancellationToken);
                 if (!comments.Any(c => c.StartsWith(marker, StringComparison.Ordinal)))
-                    await api.CommentAsync(orgName, repoName, snapshot.Number, MergeGate.ToComment(snapshot, result, action), cancellationToken);
+                    try {
+                        await (app ?? api).CommentAsync(orgName, repoName, snapshot.Number, MergeGate.ToComment(snapshot, result, action), cancellationToken);
+                    }
+                    catch (InvalidOperationException ex) {
+                        Console.Error.WriteLine($"comment skipped: {ex.Message}");
+                    }
             }
 
             return 0;
