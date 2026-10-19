@@ -8,7 +8,7 @@ Practices e cobertura de código; os controles de plataforma (`PLT-xx`) somam a 
 |---|---|---|
 | **L1 Baseline** | Scorecard roda e publica (sem 0 em Token-Permissions, Dangerous-Workflow, Binary-Artifacts); checklist Best Practices *passing*; cobertura publicada, ≥ 60 % linhas | baseline de pod do chart, schema, segredos via ESO, probes, PDB |
 | **L2 Hardened** | Scorecard ≥ 7 e Branch-Protection, Code-Review, Pinned-Dependencies, SAST, Vulnerabilities ≥ 8; Best Practices *silver*; ≥ 75 % linhas, ≥ 60 % branches, sem regressão | imagem assinada (cosign) e pinada por digest em prod, SBOM anexado, Kyverno em enforce, NetworkPolicy de egresso, PSA restricted, gate SAST |
-| **L3 Regulated** | Scorecard ≥ 8 e Signed-Releases, Dependency-Update-Tool, Security-Policy ≥ 9; Best Practices *gold*; ≥ 85 % linhas, ≥ 70 % branches | gate DAST, attestation verificada no admission, prod só por PR com aprovação, drift report, WAF declarado, evidências retidas |
+| **L3 Regulated** | Scorecard ≥ 9 com todo check sob controle do processo em 10 (Dangerous-Workflow, Token-Permissions, Binary-Artifacts, Vulnerabilities, Dependency-Update-Tool, Security-Policy, License, SAST, Pinned-Dependencies, Code-Review, Signed-Releases, Fuzzing) e Branch-Protection ≥ 8; Best Practices *gold*; ≥ 85 % linhas, ≥ 70 % branches | gate DAST, attestation verificada no admission, prod só por PR com aprovação, drift report, WAF declarado, evidências retidas |
 
 Os limiares vivem em `conformance/levels.yaml`; um tenant pode subi-los, nunca baixá-los.
 

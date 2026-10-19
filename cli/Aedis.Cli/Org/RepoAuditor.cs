@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -207,6 +208,13 @@ public static partial class RepoAuditor
                     ? "project not registered at bestpractices.dev"
                     : $"badge level '{repo.BadgeLevel}' is below '{expected}'");
             }
+            case "scorecard": {
+                var minimum = double.Parse(def.Expected!, CultureInfo.InvariantCulture);
+                double? actual = repo.Scorecard?.Checks.TryGetValue(def.Field!, out var score) == true ? score : null;
+                return Result(actual >= minimum, actual is null
+                    ? $"Scorecard check {def.Field} not published"
+                    : $"Scorecard {def.Field} is {actual:0}, expected at least {def.Expected}");
+            }
             case "summary-artifact": {
                 if (!repo.Summaries.TryGetValue(def.Artifact!, out var summary) || summary is null)
                     return Result(false, $"no '{def.Artifact}' artifact on the latest default-branch run (workflow never ran or artifact expired)");
@@ -311,7 +319,7 @@ public static partial class RepoAuditor
         public string? Tier { get; set; }
         /// <summary>Texto do critério.</summary>
         public string Criterion { get; set; } = "";
-        /// <summary>Tipo de verificação: file-exists, ruleset-as-code, workflow-exists, workflow-uses, workflow-uses-all, actions-pinned-by-sha, release-asset, badge-api, summary-artifact, org-field, org-ruleset, manual.</summary>
+        /// <summary>Tipo de verificação: file-exists, ruleset-as-code, workflow-exists, workflow-uses, workflow-uses-all, actions-pinned-by-sha, release-asset, badge-api, summary-artifact, scorecard, org-field, org-ruleset, manual.</summary>
         public string Check { get; set; } = "";
         /// <summary>Caminho do arquivo para verificações por arquivo.</summary>
         public string? Path { get; set; }
@@ -325,9 +333,9 @@ public static partial class RepoAuditor
         public string? Artifact { get; set; }
         /// <summary>Objeto consultado em org-field: <c>organization</c> (padrão) ou <c>workflow</c> (permissões do Actions).</summary>
         public string? Source { get; set; }
-        /// <summary>Campo JSON lido em org-field.</summary>
+        /// <summary>Campo JSON lido em org-field, ou nome do check do Scorecard em scorecard.</summary>
         public string? Field { get; set; }
-        /// <summary>Valor esperado: campo em org-field (comparação textual, sem diferenciar maiúsculas) ou nível mínimo do selo em badge-api (padrão: o tier do item).</summary>
+        /// <summary>Valor esperado: campo em org-field (comparação textual, sem diferenciar maiúsculas) ou nível mínimo do selo em badge-api (padrão: o tier do item), ou nota mínima do check em scorecard.</summary>
         public string? Expected { get; set; }
         /// <summary>Detalhe mostrado em itens manuais (por que não é automático, o que falta integrar).</summary>
         public string? Note { get; set; }
