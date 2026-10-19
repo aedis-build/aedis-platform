@@ -109,8 +109,7 @@ public sealed class OrgAuditTests
 
         audit.Items.Where(i => i.Status == "fail").Should().BeEmpty();
         audit.LevelAchieved.Should().Be(3);
-        audit.Items.Where(i => i.Status == "manual").Select(i => i.Id).Should().Contain(["BP-21", "BP-25", "BP-27"]);
-        audit.Items.First(i => i.Id == "BP-27").Detail.Should().Contain(".NET");
+        audit.Items.Where(i => i.Status == "manual").Select(i => i.Id).Should().Contain(["BP-21", "BP-25"]).And.NotContain("BP-27");
         audit.Items.First(i => i.Id == "BP-07").Osps.Should().Equal("AC", "BR");
     }
 
