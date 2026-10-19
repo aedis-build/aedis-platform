@@ -1,5 +1,5 @@
 # Workflow reutilizável: portão de merge. Avalia a PR do head informado contra .github/aedis-merge-policy.yaml
-# (lida do branch padrão) e, se tudo passa, aprova como a GitHub App "Aedis Platform" e habilita o auto-merge.
+# (lida do branch padrão) e, se tudo passa, aprova como a GitHub App "Aedis Compliance" e habilita o auto-merge.
 # Chame-o de um workflow `workflow_run` (roda sempre a partir do branch padrão); este job NUNCA faz checkout do
 # código da PR — só a CLI da plataforma, que lê metadados, checks e sumários pela API.
 name: merge-gate
@@ -16,8 +16,9 @@ on:
         type: boolean
         default: true
       platform-ref:
+        description: Commit/tag da plataforma de onde vem a CLI; vazio usa o mesmo commit deste workflow reutilizável
         type: string
-        default: v1
+        default: ""
     secrets:
       app-id:
         required: false
@@ -43,7 +44,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref }}
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
           path: .aedis-platform
           persist-credentials: false
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0

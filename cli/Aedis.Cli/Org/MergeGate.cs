@@ -93,7 +93,7 @@ public sealed record GateResult(string Decision, IReadOnlyList<GateCheck> Checks
 public static partial class MergeGate
 {
     /// <summary>Marcador dos comentários do portão (um por head SHA).</summary>
-    public const string CommentMarker = "[aedis-platform merge gate]";
+    public const string CommentMarker = "[aedis-compliance merge gate]";
 
     /// <summary>Avalia a PR.</summary>
     public static GateResult Evaluate(MergePolicy policy, PullRequestSnapshot pr) {
