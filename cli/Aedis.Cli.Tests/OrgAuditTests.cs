@@ -79,9 +79,19 @@ public sealed class OrgAuditTests
     }
 
     private static ScorecardResult Gold() => new(9.5, new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase) {
-        ["Token-Permissions"] = 10, ["Dangerous-Workflow"] = 10, ["Binary-Artifacts"] = 10, ["Branch-Protection"] = 9, ["Code-Review"] = 9,
-        ["Pinned-Dependencies"] = 10, ["SAST"] = 10, ["Vulnerabilities"] = 10, ["Signed-Releases"] = 9, ["Dependency-Update-Tool"] = 10, ["Security-Policy"] = 10
+        ["Token-Permissions"] = 10, ["Dangerous-Workflow"] = 10, ["Binary-Artifacts"] = 10, ["Branch-Protection"] = 8, ["Code-Review"] = 10,
+        ["Pinned-Dependencies"] = 10, ["SAST"] = 10, ["Vulnerabilities"] = 10, ["Signed-Releases"] = 10, ["Dependency-Update-Tool"] = 10,
+        ["Security-Policy"] = 10, ["License"] = 10
     });
+
+    [Fact]
+    public void L3_exige_todo_check_sob_controle_do_processo_em_10() {
+        var checks = new Dictionary<string, double>(Gold().Checks, StringComparer.OrdinalIgnoreCase) { ["Code-Review"] = 9 };
+        var audit = RepoAuditor.Evaluate(Snapshot(3, scorecard: new ScorecardResult(9.2, checks)), 3, Root);
+
+        audit.LevelAchieved.Should().Be(2);
+        audit.Items.Single(i => i.Id == "SC-L3").Detail.Should().Be("Code-Review 9 < 10");
+    }
 
     [Fact]
     public void Repositorio_completo_alcanca_L3_e_itens_manuais_nao_bloqueiam() {
@@ -220,7 +230,7 @@ public sealed class OrgAuditTests
                 return Json($$"""{"artifacts":[{"id":9,"expired":false,"created_at":"2026-10-18T00:00:00Z","workflow_run":{"head_branch":"main"},"archive_download_url":"https://api.github.com/repos/acme/bom/actions/artifacts/9/{{name}}/zip"}]}""");
             }
             if (url.Contains("/repos/acme/bom/actions/artifacts/9/")) return Zip(url.Split('/')[^2] + ".json", """{"result":"pass"}""");
-            if (url.Contains("api.scorecard.dev/projects/github.com/acme/bom")) return Json("""{"score":9.5,"checks":[{"name":"Branch-Protection","score":9},{"name":"Code-Review","score":9},{"name":"Pinned-Dependencies","score":10},{"name":"SAST","score":10},{"name":"Vulnerabilities","score":10},{"name":"Signed-Releases","score":9},{"name":"Dependency-Update-Tool","score":10},{"name":"Security-Policy","score":10},{"name":"Token-Permissions","score":10},{"name":"Dangerous-Workflow","score":10},{"name":"Binary-Artifacts","score":10}]}""");
+            if (url.Contains("api.scorecard.dev/projects/github.com/acme/bom")) return Json("""{"score":9.5,"checks":[{"name":"Branch-Protection","score":8},{"name":"Code-Review","score":10},{"name":"Pinned-Dependencies","score":10},{"name":"SAST","score":10},{"name":"Vulnerabilities","score":10},{"name":"Signed-Releases","score":10},{"name":"Dependency-Update-Tool","score":10},{"name":"Security-Policy","score":10},{"name":"Token-Permissions","score":10},{"name":"Dangerous-Workflow","score":10},{"name":"Binary-Artifacts","score":10},{"name":"License","score":10}]}""");
             if (url.Contains("/repos/acme/vazio/rules/branches/main")) return Json("[]");
             if (url.Contains("/repos/acme/vazio/rulesets")) return Json("[]");
             if (url.Contains("/repos/acme/vazio/commits/main")) return Json("""{"sha":"def"}""");
