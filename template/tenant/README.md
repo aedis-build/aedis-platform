@@ -13,7 +13,7 @@ argocd/applicationset.yaml   # como o ArgoCD lê este repo
 
 ## Fluxo
 
-1. O repo da aplicação publica a imagem `X.Y.Z-rc.N` (assinada, com SBOM) pelo `app-ci.yml`.
+1. O repo da aplicação publica a imagem `X.Y.Z-rc.N` (assinada, com SBOM) pelo `release.yml` (workflow reutilizável `build-image.yml`).
 2. O `argocd-image-updater` escreve `image.tag` em `apps/<app>/env/<não-prod>.yaml`; o ArgoCD faz o canário.
 3. Com SAST/DAST verdes, o `promote.yml` abre a PR `promote/<app>-<versão>` em `env/prod.yaml`
    com `image.tag` **e** `image.digest`. Aprovação de `@__AEDIS_ORG__/platform-security`; sync manual em prod.

@@ -29,13 +29,13 @@ O `Dockerfile` constrói no `node:22` e roda no `gcr.io/distroless/nodejs22` *no
 por digest. O deploy é declarativo pelo [Aedis Platform](https://github.com/aedis-build/aedis-platform):
 `deploy/app.yaml` são os values do chart `aedis-app` com `type: site` (Service, Ingress, HPA, PDB, NetworkPolicy,
 sem segredos); copie-o para `apps/__AEDIS_NAME__/app.yaml` no repositório GitOps
-(`aedis platform new-app __AEDIS_NAME__ --type site`). O `.github/workflows/ci.yml` roda o `app-ci` reutilizável com
-`language: node` (commits, cobertura, SAST, CodeQL, DAST contra o site servido) e, em tag `vX.Y.Z`, constrói a
-imagem assinada com SBOM.
+(`aedis platform new-app __AEDIS_NAME__ --type site`). O `.github/workflows/aedis-ci.yml` roda o pipeline único `aedis-ci` da plataforma
+com `language: node` (commits, cobertura, SAST, CodeQL, REUSE, DAST contra o site servido) e o
+`.github/workflows/release.yml`, em tag `vX.Y.Z`, constrói a imagem assinada com SBOM.
 
 ## Nível L3
 
 Para o site, L3 significa: DAST verde contra a app servida (`dast-accept.yaml` guarda aceites com validade), WAF
 declarado em `ingress.edge.waf` em produção, cabeçalhos de segurança emitidos pela própria app, cobertura ≥ 85/70
 sem regressão e testes baseados em propriedades (fast-check) nos parsers; o resto (Scorecard, Best Practices,
-imagem assinada) vem do `app-ci`.
+imagem assinada) vem do `aedis-ci` e do `release.yml`.

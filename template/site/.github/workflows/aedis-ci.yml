@@ -1,0 +1,30 @@
+# CI do site: o pipeline único do Aedis Platform (aedis-ci) com language node. Conventional Commits, testes com
+# cobertura e gate (85 % linhas, 70 % branches, sem regressão), SAST (Semgrep + regras Aedis para TypeScript/React),
+# CodeQL, REUSE e DAST (ZAP) contra o site servido. A imagem assinada sai do release.yml, em tag vX.Y.Z.
+name: aedis-ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 5 * * 2"
+
+permissions: {}
+
+jobs:
+  aedis:
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@__AEDIS_PLATFORM_REF__
+    permissions:
+      contents: read
+      actions: read
+      packages: read
+      security-events: write
+      id-token: write
+    with:
+      language: node
+      min-line: 85
+      min-branch: 70
+      no-regression: true
+      dast-start: "pnpm build && pnpm start > site.log 2>&1 &"
+      platform-ref: __AEDIS_PLATFORM_REF__

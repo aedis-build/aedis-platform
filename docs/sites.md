@@ -20,32 +20,33 @@ Gera um Next.js 16 (App Router, `output: "standalone"`, pnpm) com:
 | `Dockerfile` | multi-stage: build no `node:22` e runtime no `gcr.io/distroless/nodejs22` *nonroot*, ambos pinados por digest; sem shell; só `.next/standalone` na imagem; porta 8080 |
 | `pnpm-workspace.yaml` | `blockExoticSubdeps`, `minimumReleaseAge: 10080` (uma semana) e `trustPolicy: no-downgrade` |
 | `vitest.config.ts` | reporter Cobertura e limiares 85 % linhas / 70 % branches (L3); testes com fast-check (conta para o *Fuzzing* do Scorecard) |
-| `.github/workflows/ci.yml` | chama `app-ci.yml` com `language: node`, `image: ghcr.io/<org>/<nome>` e `dast-start` |
+| `.github/workflows/aedis-ci.yml` | chama o `aedis-ci.yml` da plataforma com `language: node` e `dast-start` |
+| `.github/workflows/release.yml` | em tag `vX.Y.Z`, chama o `build-image.yml` (imagem assinada, SBOM, proveniência) |
 | `.github/dependabot.yml` | npm, actions e docker, semanal, cooldown de 7 dias |
 | `dast-accept.yaml`, `SECURITY.md`, `README.md` | aceites do DAST com validade, política de vulnerabilidades, guia do repositório |
 | `deploy/app.yaml` | values do chart `aedis-app` com `type: site` |
 
-## 2. CI: `app-ci.yml` com `language: node`
+## 2. CI: `aedis-ci.yml` com `language: node`
 
 ```yaml
 jobs:
-  app:
-    uses: aedis-build/aedis-platform/.github/workflows/app-ci.yml@v1
-    permissions: { contents: read, actions: read, packages: write, security-events: write, id-token: write, attestations: write }
+  aedis:
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha de main>
+    permissions: { contents: read, actions: read, packages: read, security-events: write, id-token: write }
     with:
       language: node
       min-line: 85
       min-branch: 70
       no-regression: true
-      image: ghcr.io/${{ github.repository_owner }}/portal
       dast-start: "pnpm build && pnpm start > site.log 2>&1 &"
 ```
 
 Com `language: node` o pipeline troca só o que é da linguagem: a cobertura roda pelo `coverage-js.yml`
 (`pnpm install --frozen-lockfile`, o script `test:coverage` do repositório, o mesmo `scripts/coverage-gate.py` e o
 mesmo `coverage-summary.json` do .NET), o CodeQL analisa `javascript-typescript` sem build e o SAST soma
-`p/javascript p/typescript p/react` às regras Aedis para TypeScript/React. Conventional Commits, imagem assinada
-com SBOM e atestação de proveniência são iguais para as duas linguagens.
+`p/javascript p/typescript p/react` às regras Aedis para TypeScript/React. Conventional Commits, REUSE e o
+Codecov opcional são iguais para as duas linguagens. A imagem assinada com SBOM e proveniência sai do `release.yml`,
+separado porque precisa de permissões de escrita que o CI de toda PR não deve ter.
 
 `dast-start` é opcional e vale para .NET também: é o comando que constrói e serve a app em `http://localhost:8080`.
 Com ele, o job `dast` instala a toolchain da linguagem, roda o comando, espera a porta responder e chama a action
@@ -87,7 +88,7 @@ de banco ou fila. `aedis platform new-app portal --type site` gera o `app.yaml` 
 | Cabeçalhos de segurança | emitidos pela própria app em `proxy.ts` (CSP com nonce, HSTS, nosniff, sem framing, sem vazamento de referrer, `Cache-Control: no-store` nas páginas); a borda pode reforçar, não substituir |
 | Cobertura ≥ 85 % linhas / 70 % branches, sem regressão | `vitest --coverage` com reporter Cobertura e o gate do `coverage-js.yml` |
 | Fuzzing | testes baseados em propriedades com fast-check |
-| Imagem assinada, SBOM, proveniência, pin por digest | `app-ci` em tag `vX.Y.Z` + `image.digest` em prod, como para qualquer app |
+| Imagem assinada, SBOM, proveniência, pin por digest | `release.yml` (`build-image.yml`) em tag `vX.Y.Z` + `image.digest` em prod, como para qualquer app |
 
 A sessão fica em cookie `HttpOnly` emitido pelo backend; o site chama o backend só na mesma origem (`api()` do
 Aedis UI). Por isso o site não tem segredos no cofre.
