@@ -1,0 +1,33 @@
+# Workflow reutilizável: envia ao Codecov, por OIDC (sem token), o Cobertura mesclado que o coverage.yml publicou
+# no artefato coverage-summary do MESMO run. Fica separado do coverage.yml de propósito: só quem chama este job
+# precisa conceder id-token: write; os demais chamadores do coverage.yml não mudam nada. Exige a GitHub App do
+# Codecov instalada na organização.
+name: codecov
+
+on:
+  workflow_call:
+    inputs:
+      artifact:
+        description: Nome do artefato com o Cobertura (o coverage.yml publica coverage-summary)
+        type: string
+        default: coverage-summary
+
+permissions: {}
+
+jobs:
+  upload:
+    name: Codecov (por OIDC)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: ${{ inputs.artifact }}
+          path: coverage-summary
+      - uses: codecov/codecov-action@2320916714171c258d01dbd81040d64d798c6f8e # v7.1.1
+        with:
+          use_oidc: true
+          files: coverage-summary/coverage/Cobertura.xml
+          fail_ci_if_error: true

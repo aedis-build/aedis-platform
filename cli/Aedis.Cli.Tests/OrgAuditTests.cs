@@ -128,8 +128,8 @@ public sealed class OrgAuditTests
         semEvidencia.Items.Should().Contain(i => i.Id == "BP-26" && i.Status == "fail" && i.Detail.Contains("below 'silver'"));
         semEvidencia.Items.Should().Contain(i => i.Id == "BP-23" && i.Status == "pass");
 
-        var semVerificacao = RepoAuditor.Evaluate(Snapshot(3, workflow: PinnedWorkflow.Replace("gh attestation verify", "echo"), scorecard: Gold()), 3, Root);
-        semVerificacao.Items.Should().Contain(i => i.Id == "BP-23" && i.Status == "fail" && i.Detail.Contains("attestation verify|slsa-verifier"));
+        var semVerificacao = RepoAuditor.Evaluate(Snapshot(3, workflow: PinnedWorkflow.Replace("build-image.yml", "other.yml"), scorecard: Gold()), 3, Root);
+        semVerificacao.Items.Should().Contain(i => i.Id == "BP-23" && i.Status == "fail" && i.Detail.Contains("build-image|release-nuget"));
         var releaseSemSbom = RepoAuditor.Evaluate(new RepoSnapshot { Name = "r", DefaultBranch = "main", ReleaseAssets = ["app.nupkg"] }, 3, Root);
         releaseSemSbom.Items.Should().Contain(i => i.Id == "BP-22" && i.Status == "fail" && i.Detail.Contains("latest release has no asset"));
     }

@@ -49,7 +49,7 @@ tiers:
       criterion: Signed releases (Sigstore bundles on release assets or cosign/attestations in the build workflow)
       check: release-asset
       pattern: "\\.(sigstore|bundle|sig)$|\\.intoto\\.jsonl$"
-      workflowPattern: "cosign|attest-build-provenance"
+      workflowPattern: "cosign|attest-build-provenance|release-nuget\\.yml"
       osps: [BR]
     - id: BP-12
       criterion: Pinned dependencies (actions pinned by SHA)
@@ -94,12 +94,12 @@ tiers:
       criterion: SBOM published with every release (SPDX/CycloneDX asset) or attached to the built image
       check: release-asset
       pattern: "sbom|\\.spdx|\\.cdx|cyclonedx"
-      workflowPattern: "sbom|syft"
+      workflowPattern: "sbom|syft|release-nuget\\.yml"
       osps: [BR]
     - id: BP-23
-      criterion: Build provenance emitted and verified (SLSA; GitHub attestations or slsa-github-generator plus verification)
+      criterion: Build provenance emitted and verified by a reusable workflow isolated from the caller (SLSA Build Level 3; Aedis Platform build-image/release-nuget or slsa-github-generator)
       check: workflow-uses-all
-      patterns: ["attest-build-provenance|slsa-github-generator", "attestation verify|slsa-verifier"]
+      patterns: ["workflows/(build-image|release-nuget)\\.yml|slsa-github-generator"]
       osps: [BR]
     - id: BP-24
       criterion: Latest dynamic test (DAST) run on the default branch passed
