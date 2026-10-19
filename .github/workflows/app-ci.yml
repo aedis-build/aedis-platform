@@ -95,7 +95,7 @@ jobs:
 
   coverage-js:
     if: inputs.language == 'node'
-    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@d2a1fe7b17c366f71bd2a64108beae961569d21a # feat/js-gates (repinar em v1 após o merge)
+    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@5a8d6dc41147c93beffd7a821a72068ce2a3315a # feat/js-gates (repinar em v1 após o merge)
     permissions:
       contents: read
       actions: read
@@ -167,7 +167,7 @@ jobs:
           set -euo pipefail
           bash -c "$DAST_START"
           curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
-      - uses: aedis-build/aedis-platform/.github/actions/dast@d2a1fe7b17c366f71bd2a64108beae961569d21a # feat/js-gates (repinar em v1 após o merge)
+      - uses: aedis-build/aedis-platform/.github/actions/dast@5a8d6dc41147c93beffd7a821a72068ce2a3315a # feat/js-gates (repinar em v1 após o merge)
         with:
           target-url: http://localhost:8080/
 
