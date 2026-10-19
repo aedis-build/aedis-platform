@@ -1,0 +1,105 @@
+# Workflow reutilizável: release de pacotes NuGet com proveniência SLSA Build L3. Empacota, assina (cosign
+# keyless), gera SBOM SPDX, emite e verifica a atestação de proveniência do GitHub e publica a GitHub Release
+# (e o nuget.org, quando há chave). O build roda AQUI, isolado do workflow chamador: é isso que leva a atestação
+# do GitHub do nível 2 ao 3 (o chamador não consegue alterar o artefato entre o build e a atestação).
+name: release-nuget
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag semver da release (vX.Y.Z); o repositório chamador é lido nessa ref
+        type: string
+        required: true
+      solution:
+        description: Solução ou projeto a empacotar
+        type: string
+        required: true
+      dotnet-version:
+        type: string
+        default: 10.0.x
+      artifact-name:
+        description: Prefixo dos assets SBOM e proveniência na release (padrão: nome do repositório)
+        type: string
+        default: ""
+      publish-nuget:
+        description: Publicar no nuget.org (exige o secret NUGET_API_KEY)
+        type: boolean
+        default: true
+    secrets:
+      NUGET_API_KEY:
+        required: false
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Empacotar, assinar, atestar e publicar
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    env:
+      TAG: ${{ inputs.tag }}
+      NAME: ${{ inputs.artifact-name || github.event.repository.name }}
+      FEED: ${{ github.workspace }}/artifacts/feed
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: ${{ inputs.dotnet-version }}
+      - name: Empacotar com a versão da tag
+        env:
+          SOLUTION: ${{ inputs.solution }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          dotnet pack "$SOLUTION" -c Release -o "$FEED" -p:Version="$version" -p:ContinuousIntegrationBuild=true --nologo
+          ls "$FEED"
+      - name: SBOM (SPDX) dos pacotes
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          path: artifacts/feed
+          format: spdx-json
+          output-file: artifacts/sbom.spdx.json
+          upload-artifact: false
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Assinar pacotes e SBOM (cosign keyless)
+        run: |
+          set -euo pipefail
+          mv artifacts/sbom.spdx.json "artifacts/$NAME-$TAG.spdx.json"
+          for f in "$FEED"/*.nupkg "artifacts/$NAME-$TAG.spdx.json"; do
+            cosign sign-blob --yes --bundle "$f.sigstore.json" "$f"
+          done
+      - name: Proveniência (atestação SLSA emitida por este workflow reutilizável)
+        id: provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/feed/*.nupkg
+      - name: Verificar a atestação e guardar o bundle como asset (Scorecard Signed-Releases lê *.intoto.jsonl)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUNDLE: ${{ steps.provenance.outputs.bundle-path }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          for f in "$FEED"/*.nupkg; do gh attestation verify "$f" --owner "$OWNER"; done
+          cp "$BUNDLE" "artifacts/$NAME-$TAG.intoto.jsonl"
+      - name: Publicar no nuget.org
+        if: inputs.publish-nuget
+        env:
+          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$NUGET_API_KEY" ] || { echo "::error::secret NUGET_API_KEY ausente (passe secrets.NUGET_API_KEY ou publish-nuget: false)"; exit 1; }
+          dotnet nuget push "$FEED"/*.nupkg --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
+      - name: GitHub Release com pacotes, assinaturas, SBOM e proveniência
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag             "$FEED"/*.nupkg "$FEED"/*.sigstore.json             "artifacts/$NAME-$TAG.spdx.json" "artifacts/$NAME-$TAG.spdx.json.sigstore.json"             "artifacts/$NAME-$TAG.intoto.jsonl"
