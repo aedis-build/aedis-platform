@@ -20,6 +20,13 @@ public sealed class NewAppAndValidatorTests
     }
 
     [Fact]
+    public void App_yaml_de_site_traz_ingress_uid_distroless_e_nenhum_secret() {
+        var yaml = NewAppCommand.RenderAppYaml("portal", "site", "web", "ghcr.io/acme/portal", null, []);
+
+        yaml.Should().Contain("type: site").And.Contain("ingress:").And.Contain("uid: 65532").And.Contain("/app/.next/cache").And.NotContain("secrets:");
+    }
+
+    [Fact]
     public void App_yaml_de_cronjob_traz_schedule() {
         var yaml = NewAppCommand.RenderAppYaml("job", "cronjob", "fin", "ghcr.io/acme/job", "*/5 * * * *", []);
 

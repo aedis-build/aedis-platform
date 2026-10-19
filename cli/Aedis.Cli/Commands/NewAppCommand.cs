@@ -11,7 +11,7 @@ public static partial class NewAppCommand
     /// <summary>Monta o comando.</summary>
     public static Command Create() {
         var name = new Argument<string>("name") { Description = "Nome do app (DNS label; vira o diretório em apps/)" };
-        var type = new Option<string>("--type") { Description = "api | worker | cronjob", DefaultValueFactory = _ => "api" };
+        var type = new Option<string>("--type") { Description = "api | worker | cronjob | site", DefaultValueFactory = _ => "api" };
         var ns = new Option<string>("--namespace") { Description = "Namespace de destino", Required = true };
         var repository = new Option<string?>("--image") { Description = "Repositório da imagem (sem tag). Padrão: ghcr.io/<org>/<nome> lido do README" };
         var schedule = new Option<string?>("--schedule") { Description = "Cron do CronJob (type cronjob)" };
@@ -29,8 +29,8 @@ public static partial class NewAppCommand
             }
 
             var appType = parse.GetValue(type)!;
-            if (appType is not ("api" or "worker" or "cronjob")) {
-                Console.Error.WriteLine("--type deve ser api, worker ou cronjob");
+            if (appType is not ("api" or "worker" or "cronjob" or "site")) {
+                Console.Error.WriteLine("--type deve ser api, worker, cronjob ou site");
                 return 2;
             }
 
@@ -119,7 +119,20 @@ public static partial class NewAppCommand
         sb.AppendLine("resources:");
         sb.AppendLine("  requests: { cpu: 100m, memory: 256Mi }");
         sb.AppendLine("  limits: { cpu: 500m, memory: 512Mi }");
-        if (type == "api") {
+        if (type == "site") {
+            sb.AppendLine("# uid/gid nonroot das imagens distroless; o cache do Next é o único caminho gravável.");
+            sb.AppendLine("security:");
+            sb.AppendLine("  uid: 65532");
+            sb.AppendLine("  gid: 65532");
+            sb.AppendLine("  writablePaths:");
+            sb.AppendLine("    - path: /app/.next/cache");
+            sb.AppendLine("      sizeLimit: 256Mi");
+            sb.AppendLine("observability:");
+            sb.AppendLine("  metrics:");
+            sb.AppendLine("    enabled: false");
+        }
+
+        if (type is "api" or "site") {
             sb.AppendLine("ingress:");
             sb.AppendLine("  enabled: false");
             sb.AppendLine($"  hosts: [{name}.example.com]");
@@ -140,6 +153,9 @@ public static partial class NewAppCommand
             sb.AppendLine($"  schedule: \"{schedule ?? "0 * * * *"}\"");
             sb.AppendLine("  timeZone: UTC");
         }
+
+        // Um site não tem segredo de banco nem de fila: a sessão fica em cookie do backend.
+        if (type == "site") return sb.ToString();
 
         sb.AppendLine("# Chaves do Secret <app>-secret: key é o segredo no cofre SEM o prefixo do ambiente.");
         sb.AppendLine("secrets:");

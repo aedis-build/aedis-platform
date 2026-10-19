@@ -1,0 +1,31 @@
+# CI padrão do Aedis Platform para um site: Conventional Commits, testes com cobertura e gate (85 % linhas,
+# 70 % branches, sem regressão), SAST (Semgrep + regras Aedis para TypeScript/React), CodeQL, DAST (ZAP) contra o
+# site servido e, em tag vX.Y.Z, imagem assinada com SBOM.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+permissions: {}
+
+jobs:
+  app:
+    uses: aedis-build/aedis-platform/.github/workflows/app-ci.yml@__AEDIS_PLATFORM_REF__
+    permissions:
+      contents: read
+      actions: read
+      packages: write
+      security-events: write
+      id-token: write
+      attestations: write
+    with:
+      language: node
+      min-line: 85
+      min-branch: 70
+      no-regression: true
+      image: ghcr.io/${{ github.repository_owner }}/__AEDIS_NAME__
+      dast-start: "pnpm build && pnpm start > site.log 2>&1 &"
+      platform-ref: __AEDIS_PLATFORM_REF__
