@@ -50,7 +50,7 @@ public static class RulesetGuardrail
             bypass.Add(new JsonObject { ["actor_id"] = 5, ["actor_type"] = "RepositoryRole", ["bypass_mode"] = "pull_request" });
 
         var conditions = new JsonObject {
-            ["ref_name"] = new JsonObject { ["include"] = new JsonArray("~DEFAULT_BRANCH"), ["exclude"] = new JsonArray() }
+            ["ref_name"] = new JsonObject { ["include"] = new JsonArray("~DEFAULT_BRANCH", "refs/heads/develop"), ["exclude"] = new JsonArray() }
         };
         if (allRepositories)
             conditions["repository_name"] = new JsonObject { ["include"] = new JsonArray("~ALL"), ["exclude"] = new JsonArray() };
