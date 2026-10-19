@@ -66,7 +66,7 @@ permissions: {}
 jobs:
   commits:
     if: github.event_name == 'pull_request'
-    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
+    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
     permissions:
       contents: read
     with:
@@ -74,7 +74,7 @@ jobs:
 
   coverage:
     if: inputs.language == 'dotnet' && github.event_name != 'schedule'
-    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
+    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
     permissions:
       contents: read
       packages: read
@@ -89,7 +89,7 @@ jobs:
 
   coverage-js:
     if: inputs.language == 'node' && github.event_name != 'schedule'
-    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@5a8d6dc41147c93beffd7a821a72068ce2a3315a # feat/js-gates (repinar em main após o merge)
+    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
     permissions:
       contents: read
       actions: read
@@ -127,7 +127,7 @@ jobs:
           fail_ci_if_error: true
 
   sast:
-    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@33c000e3effbd9151212c77aa29c24646ec6e5dc # v1
+    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
     permissions:
       contents: read
       security-events: write
@@ -198,6 +198,6 @@ jobs:
           set -euo pipefail
           bash -c "$DAST_START"
           curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
-      - uses: aedis-build/aedis-platform/.github/actions/dast@5a8d6dc41147c93beffd7a821a72068ce2a3315a # feat/js-gates (repinar em main após o merge)
+      - uses: aedis-build/aedis-platform/.github/actions/dast@6b5a4b798354c39f620091ebde885fb0a696978b # main
         with:
           target-url: http://localhost:8080/
