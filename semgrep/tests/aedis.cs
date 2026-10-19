@@ -19,6 +19,8 @@ public class GoodHost : AedisApiHost
     protected override bool EnableAuthentication => true;
     // ok: aedis.swagger-enabled-unconditionally
     protected override bool EnableSwagger => Environment.IsDevelopment();
+    // ok: aedis.swagger-enabled-unconditionally
+    // protected override bool EnableSwagger => true;
 }
 
 public class OrdersController : ControllerBase

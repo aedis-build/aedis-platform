@@ -6,14 +6,14 @@ rules:
     severity: ERROR
     message: "Host com EnableAuthentication desligado: fora de Development o AedisApiHost recusa iniciar; em Development expõe tudo sem login. Remova o override."
     metadata: { category: security, cwe: "CWE-306", owasp: "A07:2021", aedis-control: PLT-13 }
-    pattern-regex: 'EnableAuthentication\s*=>\s*false'
+    pattern-regex: '(?m)^(?!\s*//).*EnableAuthentication\s*=>\s*false'
 
   - id: aedis.swagger-enabled-unconditionally
     languages: [csharp]
     severity: WARNING
     message: "Swagger ligado sem condição de ambiente expõe o contrato da API em produção. Condicione a Development ou remova."
     metadata: { category: security, cwe: "CWE-200", aedis-control: PLT-13 }
-    pattern-regex: 'EnableSwagger\s*=>\s*true'
+    pattern-regex: '(?m)^(?!\s*//).*EnableSwagger\s*=>\s*true'
 
   - id: aedis.allow-anonymous-on-write-verb
     languages: [csharp]
