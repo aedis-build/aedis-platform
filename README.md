@@ -68,7 +68,7 @@ Fecha o ciclo sem bypass de administrador: um workflow `workflow_run` (sempre a 
 checkout do código da PR) chama `merge-gate.yml`, que avalia a PR contra `.github/aedis-merge-policy.yaml` (autores
 confiáveis e sem fork, título Conventional sem trailers de co-autoria de IA, nada de breaking, nenhum caminho que
 exija humano, tamanho, estado mergeável, checks obrigatórios verdes no head, sumários `coverage`/`sast` com `pass`
-e cobertura sem regressão) e, quando tudo passa, aprova como a GitHub App "Aedis Platform" e habilita o auto-merge.
+e cobertura sem regressão) e, quando tudo passa, aprova como a GitHub App "Aedis Compliance" e habilita o auto-merge.
 A App precisa estar instalada na organização com `pull_requests: write`, `contents: write`, `checks: read`,
 `metadata: read`; os secrets `AEDIS_APP_ID` e `AEDIS_APP_PRIVATE_KEY` ficam na organização. Sem eles o portão só
 avalia e comenta. O `GITHUB_TOKEN` nunca aprova (ORG-02). No L3 a revisão de code owner continua humana: a App

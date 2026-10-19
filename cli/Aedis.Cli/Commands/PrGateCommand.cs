@@ -26,7 +26,7 @@ public static class PrGateCommand
         var output = new Option<string>("--out") { Description = "Summary directory", DefaultValueFactory = _ => "." };
         var token = new Option<string?>("--token") { Description = "Read token (default: GITHUB_TOKEN, GH_TOKEN or `gh auth token`)" };
 
-        var command = new Command("gate", "Evaluates a pull request against .github/aedis-merge-policy.yaml and approves it as the Aedis Platform GitHub App when every criterion passes.") {
+        var command = new Command("gate", "Evaluates a pull request against .github/aedis-merge-policy.yaml and approves it as the Aedis Compliance GitHub App when every criterion passes.") {
             org, repo, pr, headSha, policy, approve, appId, appKey, output, token
         };
         command.SetAction(async (parse, cancellationToken) => {
