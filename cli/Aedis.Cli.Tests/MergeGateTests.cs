@@ -50,6 +50,9 @@ public sealed class MergeGateTests
         var noSummary = Good() with { Summaries = new Dictionary<string, JsonObject?> { ["coverage-summary"] = Good().Summaries["coverage-summary"] } };
         MergeGate.Evaluate(policy, noSummary).Decision.Should().Be("wait");
 
+        var failAndPending = pending with { Title = "feat!: quebra" };
+        MergeGate.Evaluate(policy, failAndPending).Decision.Should().Be("wait", "the verdict waits for every check to finish, even with a fail already known");
+
         var failing = Good() with { CheckConclusions = new Dictionary<string, string?> { ["ci / build"] = "failure", ["sast"] = "success" } };
         var r = MergeGate.Evaluate(policy, failing);
         r.Decision.Should().Be("block");

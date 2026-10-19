@@ -87,8 +87,9 @@ public sealed record GateResult(string Decision, IReadOnlyList<GateCheck> Checks
 /// <summary>
 ///     Avalia uma PR contra a <see cref="MergePolicy" />: autor confiável e sem fork, Conventional Commit sem
 ///     trailers proibidos, nada de breaking, nenhum caminho que exija humano, tamanho, estado mergeável, checks
-///     obrigatórios verdes no head, sumários com <c>pass</c> e cobertura sem regressão. Qualquer <c>fail</c> bloqueia;
-///     sem <c>fail</c> e com algo <c>pending</c>, espera; senão aprova.
+///     obrigatórios verdes no head, sumários com <c>pass</c> e cobertura sem regressão. Com algo <c>pending</c>
+///     espera, mesmo havendo <c>fail</c>: o veredito (e o comentário) só sai quando todos os checks terminaram;
+///     sem <c>pending</c>, qualquer <c>fail</c> bloqueia; senão aprova.
 /// </summary>
 public static partial class MergeGate
 {
@@ -143,7 +144,7 @@ public static partial class MergeGate
             Add("coverage-regression", current + 0.05 >= baseline, $"line coverage {current:0.00}% is below the base branch ({baseline:0.00}%)");
         }
 
-        var decision = checks.Any(c => c.Status == "fail") ? "block" : checks.Any(c => c.Status == "pending") ? "wait" : "approve";
+        var decision = checks.Any(c => c.Status == "pending") ? "wait" : checks.Any(c => c.Status == "fail") ? "block" : "approve";
         return new GateResult(decision, checks);
     }
 

@@ -87,7 +87,7 @@ proteção viva do branch padrão e mínimos do OpenSSF Scorecard (`conformance/
 `org-audit-summary.json` (schema `aedis.platform/org-audit/v1`), `org-audit.md` e `org-audit.html` (relatório
 autocontido no estilo dos scanners, com a organização, todos os critérios por repositório, checks obrigatórios e notas
 do Scorecard por check). Com `--apply` aplica os guardrails do nível em toda a organização de uma vez: ruleset de
-organização `aedis-main` para o branch padrão de todos os repositórios, permissões de workflow do Actions (token só
+organização `aedis-main` para o branch padrão (e `develop`, quando existir) de todos os repositórios, permissões de workflow do Actions (token só
 leitura, sem aprovar PRs), configurações de segurança da org e o ruleset de cada repositório com os checks informados.
 2FA não tem API de escrita e segue como item a ligar na UI da organização.
 
