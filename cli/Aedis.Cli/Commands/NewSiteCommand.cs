@@ -15,7 +15,7 @@ public static partial class NewSiteCommand
         var output = new Option<string?>("--out") { Description = "Diretório de saída (padrão: ./<nome>)" };
         var force = new Option<bool>("--force") { Description = "Sobrescreve arquivos existentes" };
 
-        var command = new Command("new-site", "Cria um site Next.js (App Router, standalone) com Aedis UI, Dockerfile distroless, proxy.ts com os cabeçalhos de segurança e CI do app-ci com language node.") {
+        var command = new Command("new-site", "Cria um site Next.js (App Router, standalone) com Aedis UI, Dockerfile distroless, proxy.ts com os cabeçalhos de segurança e CI do aedis-ci com language node e release da imagem em tag.") {
             name, org, platformRef, output, force
         };
         command.SetAction(parse => {

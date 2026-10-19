@@ -95,6 +95,6 @@ Os segredos chegam por `envFrom` do `Secret <name>-secret`; a chave `Database__C
 ## Próximos passos
 
 - [Referência do chart](chart.md)
-- [Sites Next.js com Aedis UI](sites.md): `aedis platform new-site`, `app-ci` com `language: node`, `type: site`
+- [Sites Next.js com Aedis UI](sites.md): `aedis platform new-site`, `aedis-ci` com `language: node`, `type: site`
 - Guias por nuvem: [AWS](clouds/aws.md), [Azure](clouds/azure.md), [DigitalOcean e genérico](clouds/generic.md)
 - [Níveis de conformidade](conformance.md)

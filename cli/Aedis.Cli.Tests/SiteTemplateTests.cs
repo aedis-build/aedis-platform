@@ -5,7 +5,7 @@ using Xunit;
 namespace Aedis.Cli.Tests;
 
 /// <summary>
-///     O template embarcado do site traz o essencial de um repositório L3 (CI do app-ci com language node, Dockerfile
+///     O template embarcado do site traz o essencial de um repositório L3 (CI do aedis-ci com language node, release da imagem em tag, Dockerfile
 ///     distroless, proxy com cabeçalhos, values type site) e sai sem token depois da instanciação.
 /// </summary>
 public sealed class SiteTemplateTests
@@ -17,9 +17,10 @@ public sealed class SiteTemplateTests
         Template.Keys.Should().Contain([
             "package.json", "pnpm-workspace.yaml", "pnpm-lock.yaml", "next.config.ts", "proxy.ts", "lib/security-headers.ts", "components.json",
             "Dockerfile", "vitest.config.ts", "dast-accept.yaml", "SECURITY.md", "README.md", "deploy/app.yaml",
-            ".github/workflows/ci.yml", ".github/dependabot.yml"
+            ".github/workflows/aedis-ci.yml", ".github/workflows/release.yml", ".github/dependabot.yml"
         ]);
-        Template[".github/workflows/ci.yml"].Should().Contain("language: node").And.Contain("dast-start:");
+        Template[".github/workflows/aedis-ci.yml"].Should().Contain("language: node").And.Contain("dast-start:").And.NotContain("packages: write");
+        Template[".github/workflows/release.yml"].Should().Contain("build-image.yml@").And.Contain("packages: write");
         Template["deploy/app.yaml"].Should().Contain("type: site");
         Template["components.json"].Should().Contain("\"@aedis\"");
     }
@@ -31,6 +32,6 @@ public sealed class SiteTemplateTests
         files.Values.Should().AllSatisfy(content => content.Should().NotContain("__AEDIS_"));
         files["package.json"].Should().Contain("\"name\": \"portal\"");
         files["deploy/app.yaml"].Should().Contain("repository: ghcr.io/acme/portal");
-        files[".github/workflows/ci.yml"].Should().Contain("app-ci.yml@abc123").And.Contain("platform-ref: abc123");
+        files[".github/workflows/aedis-ci.yml"].Should().Contain("aedis-ci.yml@abc123").And.Contain("platform-ref: abc123");
     }
 }
