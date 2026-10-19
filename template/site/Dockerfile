@@ -16,4 +16,6 @@ WORKDIR /app
 COPY --from=build --chown=nonroot:nonroot /src/.next/standalone ./
 ENV NODE_ENV=production PORT=8080 HOSTNAME=0.0.0.0 NEXT_TELEMETRY_DISABLED=1
 EXPOSE 8080
+# A base :nonroot já roda como 65532; o USER explícito mantém isso se a tag da base mudar.
+USER nonroot
 CMD ["server.js"]
