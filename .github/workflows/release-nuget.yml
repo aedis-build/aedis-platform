@@ -1,6 +1,6 @@
 # Workflow reutilizável: release de pacotes NuGet com proveniência SLSA Build L3. Empacota, assina (cosign
 # keyless), gera SBOM SPDX, emite e verifica a atestação de proveniência do GitHub e publica a GitHub Release
-# (e o nuget.org, quando há chave). O build roda AQUI, isolado do workflow chamador: é isso que leva a atestação
+# (e o nuget.org por Trusted Publishing, OIDC, quando publish-nuget). O build roda AQUI, isolado do workflow chamador: é isso que leva a atestação
 # do GitHub do nível 2 ao 3 (o chamador não consegue alterar o artefato entre o build e a atestação).
 name: release-nuget
 
@@ -23,16 +23,17 @@ on:
         type: string
         default: ""
       publish-nuget:
-        description: Publicar no nuget.org (exige o secret NUGET_API_KEY)
+        description: Publicar no nuget.org por Trusted Publishing (OIDC, sem chave); exige nuget-user e a política no nuget.org
         type: boolean
-        default: true
+        default: false
+      nuget-user:
+        description: Nome de perfil no nuget.org de quem criou a política de Trusted Publishing (não o e-mail)
+        type: string
+        default: ""
       platform-ref:
         description: Ref do aedis-platform de onde vem o gerador de notas (padrão, o mesmo commit deste workflow)
         type: string
         default: ""
-    secrets:
-      NUGET_API_KEY:
-        required: false
 
 permissions: {}
 
@@ -101,13 +102,25 @@ jobs:
           set -euo pipefail
           for f in "$FEED"/*.nupkg; do gh attestation verify "$f" --owner "$OWNER"; done
           cp "$BUNDLE" "artifacts/$NAME-$TAG.intoto.jsonl"
+      # Trusted Publishing: o token OIDC do GitHub vira uma chave do nuget.org válida por 1 hora, pedida só aqui,
+      # logo antes do push. Nenhuma chave de longa duração existe no repositório nem na organização.
+      - name: Conferir o usuário do nuget.org
+        if: inputs.publish-nuget && inputs.nuget-user == ''
+        run: |
+          echo "::error::publish-nuget exige nuget-user (o nome de perfil no nuget.org de quem criou a política de Trusted Publishing)"
+          exit 1
+      - name: Login no nuget.org (Trusted Publishing, OIDC)
+        id: nuget
+        if: inputs.publish-nuget
+        uses: NuGet/login@8d196754b4036150537f80ac539e15c2f1028841 # v1.2.0
+        with:
+          user: ${{ inputs.nuget-user }}
       - name: Publicar no nuget.org
         if: inputs.publish-nuget
         env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.nuget.outputs.NUGET_API_KEY }}
         run: |
           set -euo pipefail
-          [ -n "$NUGET_API_KEY" ] || { echo "::error::secret NUGET_API_KEY ausente (passe secrets.NUGET_API_KEY ou publish-nuget: false)"; exit 1; }
           dotnet nuget push "$FEED"/*.nupkg --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY" --skip-duplicate
       # Notas legíveis com o impacto da atualização (Conventional Commits desde a tag anterior), não o log cru.
       - name: Notas da release
