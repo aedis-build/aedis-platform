@@ -91,9 +91,28 @@ public sealed class GitHubApi
             .Select(r => r["name"]!.GetValue<string>()).Distinct(StringComparer.Ordinal).ToList() ?? [];
     }
 
-    /// <summary>Cria o ruleset do repositório ou atualiza o de mesmo nome. Devolve "created" ou "updated".</summary>
-    public Task<string> UpsertRulesetAsync(string org, string repo, JsonObject ruleset, CancellationToken ct) =>
-        UpsertRulesetAsync($"https://api.github.com/repos/{org}/{repo}/rulesets", ruleset, ct);
+    /// <summary>
+    ///     Cria o ruleset do repositório ou atualiza o de mesmo nome. Um ruleset antigo de nome <paramref name="legacyName" />
+    ///     é renomeado quando é o único, ou apagado quando o de nome novo já existe. Devolve "created" ou "updated".
+    /// </summary>
+    public async Task<string> UpsertRulesetAsync(string org, string repo, JsonObject ruleset, CancellationToken ct, string? legacyName = null) {
+        var url = $"https://api.github.com/repos/{org}/{repo}/rulesets";
+        if (legacyName is not null && await GetJsonAsync<JsonArray>($"{url}?includes_parents=false", ct) is { } existing) {
+            long? Id(string name) => existing.OfType<JsonObject>().FirstOrDefault(r => r["name"]?.GetValue<string>() == name)?["id"]?.GetValue<long>();
+            if (Id(legacyName) is { } legacy) {
+                if (Id(ruleset["name"]!.GetValue<string>()) is null) {
+                    await SendAsync(HttpMethod.Put, $"{url}/{legacy}", ruleset, ct);
+                    return "updated";
+                }
+
+                using var deleted = await _http.DeleteAsync($"{url}/{legacy}", ct);
+                if (!deleted.IsSuccessStatusCode)
+                    throw new InvalidOperationException($"GitHub rejected deleting ruleset {legacyName} at {url} ({(int)deleted.StatusCode}): {await deleted.Content.ReadAsStringAsync(ct)}");
+            }
+        }
+
+        return await UpsertRulesetAsync(url, ruleset, ct);
+    }
 
     /// <summary>Cria o ruleset da organização ou atualiza o de mesmo nome. Devolve "created" ou "updated".</summary>
     public Task<string> UpsertOrganizationRulesetAsync(string org, JsonObject ruleset, CancellationToken ct) =>

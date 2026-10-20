@@ -45,10 +45,11 @@ Mudanças em `conformance/levels.yaml` só sobem limiares em versões major do c
 
 O ruleset vive em `.github/rulesets/main.json` (só PR com squash, histórico linear, checks `Conventional Commits`,
 `Chart aedis-app` e `Template do tenant valida com o chart` obrigatórios e atualizados, sem force-push nem
-deleção). Aplicar/atualizar:
+deleção). O workflow `org-guardrails` aplica a cada 6 h o ruleset `main` do nível L3 em todo repositório da
+organização, com os checks obrigatórios lidos deste arquivo. Para não esperar, rode-o à mão:
 
 ```bash
-gh api -X POST repos/aedis-build/aedis-platform/rulesets --input .github/rulesets/main.json
+gh workflow run org-guardrails -R aedis-build/aedis-platform
 ```
 
 Com um segundo mantenedor, suba `required_approving_review_count` para 1 e ligue `require_code_owner_review`.
