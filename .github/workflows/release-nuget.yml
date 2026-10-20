@@ -1,7 +1,8 @@
 # Workflow reutilizável: release de pacotes NuGet com proveniência SLSA Build L3. Empacota, assina (cosign
 # keyless), gera SBOM SPDX, emite e verifica a atestação de proveniência do GitHub e publica a GitHub Release
-# (e o nuget.org por Trusted Publishing, OIDC, quando publish-nuget). O build roda AQUI, isolado do workflow chamador: é isso que leva a atestação
-# do GitHub do nível 2 ao 3 (o chamador não consegue alterar o artefato entre o build e a atestação).
+# (e o nuget.org por Trusted Publishing, OIDC, quando publish-nuget). O build roda AQUI, isolado do workflow
+# chamador: é isso que leva a atestação do GitHub do nível 2 ao 3 (o chamador não consegue alterar o artefato
+# entre o build e a atestação).
 name: release-nuget
 
 on:
