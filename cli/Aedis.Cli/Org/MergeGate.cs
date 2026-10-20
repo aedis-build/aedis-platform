@@ -168,14 +168,67 @@ public static partial class MergeGate
 
     /// <summary>Comentário Markdown para a PR, em inglês, com o marcador e o head avaliado.</summary>
     public static string ToComment(PullRequestSnapshot pr, GateResult result, string? action) {
+        var sha = pr.HeadSha[..7];
         var sb = new StringBuilder();
-        sb.AppendLine($"{CommentMarker} `{pr.HeadSha[..7]}` — **{result.Decision}**{(action is null ? "" : $" ({action})")}");
+        sb.AppendLine($"<!-- {CommentMarker} `{sha}` -->");
+        if (result.Decision == "approve") {
+            sb.AppendLine("### ✅ Approved by Aedis Compliance");
+            sb.AppendLine();
+            sb.AppendLine($"Every criterion of the merge policy passed for `{sha}`.");
+        }
+        else {
+            var onlyHuman = result.Checks.Where(c => c.Status == "fail").All(c => c.Id is "paths" or "breaking");
+            sb.AppendLine(onlyHuman ? "### 👀 Needs a maintainer review" : "### ⛔ Not approved by Aedis Compliance");
+            sb.AppendLine();
+            sb.AppendLine(onlyHuman
+                ? $"This change touches what the merge policy reserves for a human, so `{sha}` waits for a maintainer approval."
+                : $"Fix the items below and push again; the gate re-evaluates every new commit (`{sha}`).");
+            sb.AppendLine();
+            sb.AppendLine("| | Criterion | Detail |");
+            sb.AppendLine("|---|---|---|");
+            foreach (var c in result.Checks.Where(c => c.Status != "pass"))
+                sb.AppendLine($"| {(c.Status == "fail" ? "⛔" : "⏳")} | {Label(c.Id)} | {c.Detail.Replace("|", "\\|")} |");
+        }
+
+        if (action is not null) {
+            sb.AppendLine();
+            sb.AppendLine($"> ℹ️ {action}");
+        }
+
         sb.AppendLine();
-        foreach (var c in result.Checks.Where(c => c.Status != "pass"))
-            sb.AppendLine($"- `{c.Id}`: {c.Status}{(string.IsNullOrEmpty(c.Detail) ? "" : " — " + c.Detail)}");
-        if (result.Checks.All(c => c.Status == "pass")) sb.AppendLine("- all criteria of `.github/aedis-merge-policy.yaml` passed");
+        sb.AppendLine("<sub>Policy: <code>.github/aedis-merge-policy.yaml</code> on the default branch.</sub>");
         return sb.ToString();
     }
+
+    /// <summary>Nome legível de um critério do portão, para o comentário na PR.</summary>
+    public static string Label(string id) => id switch {
+        "author" => "Trusted author",
+        "draft" => "Ready for review",
+        "title" => "Conventional Commit title",
+        "trailers" => "No AI co-authorship trailers",
+        "breaking" => "No breaking change",
+        "paths" => "Human-reviewed paths",
+        "size" => "Change size",
+        "mergeable" => "Mergeable",
+        "coverage-regression" => "Coverage does not drop",
+        _ when id.StartsWith("check:", StringComparison.Ordinal) => $"Check `{id[6..]}`",
+        _ when id.StartsWith("summary:", StringComparison.Ordinal) => $"Report `{id[8..]}`",
+        _ => id
+    };
+
+    /// <summary>
+    ///     Explicação curta para o erro do GitHub ao habilitar o auto-merge; o erro cru fica no log e no
+    ///     sumário JSON do run.
+    /// </summary>
+    public static string AutoMergeNote(string error) => error switch {
+        _ when error.Contains("stacked pull requests", StringComparison.OrdinalIgnoreCase) =>
+            "Approved. Auto-merge turns on when this pull request targets the default branch: GitHub does not support it on stacked pull requests.",
+        _ when error.Contains("clean status", StringComparison.OrdinalIgnoreCase) =>
+            "Approved and ready: the pull request can be merged now.",
+        _ when error.Contains("not allowed", StringComparison.OrdinalIgnoreCase) =>
+            "Approved. Auto-merge is disabled in this repository's settings; merge it manually.",
+        _ => "Approved. Auto-merge could not be enabled; see the merge gate run for the details."
+    };
 
     [GeneratedRegex(@"^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([a-z0-9._/-]+\))?!?: [^ ].{0,99}$")]
     private static partial Regex ConventionalCommit();

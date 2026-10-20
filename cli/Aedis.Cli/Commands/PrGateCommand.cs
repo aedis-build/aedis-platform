@@ -61,16 +61,17 @@ public static class PrGateCommand
 
             if (result.Decision == "approve" && parse.GetValue(approve)) {
                 if (app is null) {
-                    action = "approval skipped: no GitHub App credentials (AEDIS_APP_ID/AEDIS_APP_PRIVATE_KEY)";
+                    action = "Not approved: the GitHub App credentials (AEDIS_APP_ID/AEDIS_APP_PRIVATE_KEY) are missing in this repository.";
                 }
                 else {
-                    await app.ApprovePullRequestAsync(orgName, repoName, snapshot.Number, $"{MergeGate.CommentMarker} every criterion of the merge policy passed for `{snapshot.HeadSha[..7]}`.", cancellationToken);
+                    await app.ApprovePullRequestAsync(orgName, repoName, snapshot.Number, $"✅ Every criterion of the merge policy passed for `{snapshot.HeadSha[..7]}` (Aedis Compliance).", cancellationToken);
                     try {
                         await app.EnableAutoMergeAsync(snapshot.NodeId, mergePolicy.MergeMethod, cancellationToken);
-                        action = "approved and auto-merge enabled";
+                        action = "Auto-merge is on: GitHub merges this pull request as soon as every required check passes.";
                     }
                     catch (InvalidOperationException ex) {
-                        action = $"approved; auto-merge not enabled ({ex.Message})";
+                        Console.Error.WriteLine($"auto-merge not enabled: {ex.Message}");
+                        action = MergeGate.AutoMergeNote(ex.Message);
                     }
                 }
             }
@@ -83,7 +84,7 @@ public static class PrGateCommand
             if (result.Decision != "wait") {
                 var marker = $"{MergeGate.CommentMarker} `{snapshot.HeadSha[..7]}`";
                 var comments = await api.ListIssueCommentsAsync(orgName, repoName, snapshot.Number, cancellationToken);
-                if (!comments.Any(c => c.StartsWith(marker, StringComparison.Ordinal)))
+                if (!comments.Any(c => c.Contains(marker, StringComparison.Ordinal)))
                     try {
                         await (app ?? api).CommentAsync(orgName, repoName, snapshot.Number, MergeGate.ToComment(snapshot, result, action), cancellationToken);
                     }
