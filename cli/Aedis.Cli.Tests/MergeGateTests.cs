@@ -100,6 +100,49 @@ public sealed class MergeGateTests
         MergeGate.GlobMatches(glob, path).Should().Be(expected);
 
     [Fact]
+    public void Comentario_de_aprovacao_e_legivel_e_traz_a_nota_do_auto_merge_sem_json() {
+        var result = MergeGate.Evaluate(MergePolicy.Parse(Policy), Good());
+        var note = MergeGate.AutoMergeNote("""GitHub rejected enablePullRequestAutoMerge (200): {"errors":[{"message":"Auto-merge is not supported for stacked pull requests."}]}""");
+
+        var comment = MergeGate.ToComment(Good(), result, note);
+
+        comment.Should().StartWith($"<!-- {MergeGate.CommentMarker} `abcdef1` -->")
+            .And.Contain("### ✅ Approved by Aedis Compliance")
+            .And.Contain("> ℹ️ Approved. Auto-merge turns on when this pull request targets the default branch")
+            .And.NotContain("{").And.NotContain("enablePullRequestAutoMerge");
+    }
+
+    [Fact]
+    public void So_caminho_sensivel_pede_revisao_humana_e_outras_falhas_bloqueiam_com_tabela() {
+        var policy = MergePolicy.Parse(Policy);
+        var human = Good() with { Files = [".github/workflows/ci.yml"] };
+        var humanComment = MergeGate.ToComment(human, MergeGate.Evaluate(policy, human), null);
+
+        humanComment.Should().Contain("### 👀 Needs a maintainer review")
+            .And.Contain("| ⛔ | Human-reviewed paths | human review required for: .github/workflows/ci.yml |");
+
+        var failing = Good() with { CheckConclusions = new Dictionary<string, string?> { ["ci / build"] = "failure", ["sast"] = "success" } };
+        var failComment = MergeGate.ToComment(failing, MergeGate.Evaluate(policy, failing), null);
+
+        failComment.Should().Contain("### ⛔ Not approved by Aedis Compliance")
+            .And.Contain("| ⛔ | Check `ci / build` | concluded 'failure' |")
+            .And.NotContain("> ℹ️");
+    }
+
+    [Theory]
+    [InlineData("Pull request is in clean status", "Approved and ready")]
+    [InlineData("Auto merge is not allowed for this repository", "disabled in this repository's settings")]
+    [InlineData("something unexpected", "see the merge gate run")]
+    public void Erro_do_auto_merge_vira_nota_curta(string error, string expected) =>
+        MergeGate.AutoMergeNote(error).Should().Contain(expected);
+
+    [Theory]
+    [InlineData("summary:coverage-summary", "Report `coverage-summary`")]
+    [InlineData("coverage-regression", "Coverage does not drop")]
+    [InlineData("desconhecido", "desconhecido")]
+    public void Criterio_tem_nome_legivel(string id, string label) => MergeGate.Label(id).Should().Be(label);
+
+    [Fact]
     public void Jwt_da_App_e_assinado_com_a_chave_e_verificavel_com_a_publica() {
         using var rsa = RSA.Create(2048);
         var jwt = GitHubAppAuth.CreateJwt("12345", rsa.ExportRSAPrivateKeyPem(), new DateTimeOffset(2026, 10, 18, 12, 0, 0, TimeSpan.Zero));
@@ -174,7 +217,7 @@ public sealed class MergeGateTests
         exit.Should().Be(0, stderr.ToString());
         var summary = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(outDir, "merge-gate-summary.json")))!;
         summary["decision"]!.GetValue<string>().Should().Be("approve");
-        summary["action"]!.GetValue<string>().Should().Be("approved and auto-merge enabled");
+        summary["action"]!.GetValue<string>().Should().StartWith("Auto-merge is on");
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/pulls/5/reviews")).Which.Should().Match<(HttpMethod, string, string Auth, string Body)>(w => w.Auth == "ghs_app" && w.Body.Contains("APPROVE"));
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/graphql")).Which.Body.Should().Contain("SQUASH").And.Contain("PR_1");
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/issues/5/comments")).Which.Body.Should().Contain(MergeGate.CommentMarker);
@@ -192,7 +235,7 @@ public sealed class MergeGateTests
         await root.Parse(["gate", "--org", "acme", "--repo", "bom", "--pr", "5", "--out", outDir, "--token", "t"]).InvokeAsync();
 
         var summary = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(outDir, "merge-gate-summary.json")))!;
-        summary["action"]!.GetValue<string>().Should().Contain("no GitHub App credentials");
+        summary["action"]!.GetValue<string>().Should().Contain("GitHub App credentials");
         fake.Writes.Should().NotContain(w => w.Url.EndsWith("/reviews"));
     }
 }
