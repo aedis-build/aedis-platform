@@ -57,6 +57,35 @@ public sealed class AgentIdentityTests
         MergeGate.Evaluate(policy, pr with { HumanApprovers = ["owner"] }).Decision.Should().Be("approve");
     }
 
+    [Fact]
+    public void Com_time_de_mantenedores_so_membros_do_time_contam() {
+        var reviews = new JsonArray(Review("owner", "APPROVED"), Review("colaborador", "APPROVED", association: "COLLABORATOR"));
+
+        MergeGate.HumanApprovers(reviews, "aedis-agent-coder[bot]", Head, maintainers: ["Colaborador"]).Should().Equal("colaborador");
+        MergeGate.HumanApprovers(reviews, "aedis-agent-coder[bot]", Head, maintainers: []).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Time_ilegivel_bloqueia_mudanca_sensivel_em_vez_de_afrouxar_a_regra() {
+        var policy = MergePolicy.Parse("""
+            trustedAuthors: ["aedis-agent-coder[bot]"]
+            humanRequiredPaths: [".github/**"]
+            requiredSummaries: []
+            maintainersTeam: maintainers
+            """);
+        var pr = new PullRequestSnapshot {
+            Number = 7, Author = "aedis-agent-coder[bot]", HeadSha = Head, Title = "ci: ajusta o workflow", MergeableState = "blocked",
+            MaintainersTeamError = "cannot read the members of @acme/maintainers"
+        };
+
+        policy.MaintainersTeam.Should().Be("maintainers");
+        MergeGate.Evaluate(policy, pr).Decision.Should().Be("approve", "a change outside sensitive paths does not need the team");
+        var sensitive = MergeGate.Evaluate(policy, pr with { Files = [".github/workflows/ci.yml"] });
+        sensitive.Decision.Should().Be("block");
+        sensitive.Checks.Should().Contain(c => c.Id == "maintainers-team" && c.Status == "fail");
+        MergeGate.Label("maintainers-team").Should().Be("Maintainers team");
+    }
+
     private sealed class FakeAppApi : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
