@@ -190,7 +190,22 @@ public sealed class OrgAuditTests
         pr["require_code_owner_review"]!.GetValue<bool>().Should().BeTrue();
         pr["required_approving_review_count"]!.GetValue<int>().Should().Be(1);
         l3["bypass_actors"]!.AsArray().Should().BeEmpty();
+        l3["name"]!.GetValue<string>().Should().Be("main", "o mesmo nome do .github/rulesets/main.json versionado");
+        RulesetGuardrail.Build(3, 1, [], true, allRepositories: true)["name"]!.GetValue<string>().Should().Be("aedis-main");
     }
+
+    [Fact]
+    public void Checks_obrigatorios_vem_do_ruleset_versionado() {
+        RulesetGuardrail.RequiredChecksFrom(System.IO.File.ReadAllText(Path.Combine(Root, "template", "tenant", ".github", "rulesets", "main.json"))).Should().NotBeEmpty();
+        RulesetGuardrail.RequiredChecksFrom(RulesetWithChecks).Should().Equal("Conventional Commits", "ci / build");
+        RulesetGuardrail.RequiredChecksFrom(null).Should().BeEmpty();
+        RulesetGuardrail.RequiredChecksFrom("conteudo").Should().BeEmpty();
+        RulesetGuardrail.RequiredChecksFrom("""{"rules":[{"type":"deletion"}]}""").Should().BeEmpty();
+    }
+
+    private const string RulesetWithChecks = """
+        {"name":"main","rules":[{"type":"deletion"},{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"Conventional Commits"},{"context":"ci / build"}]}}]}
+        """;
 
     private const string OrgJson = """
         {"login":"acme","two_factor_requirement_enabled":true,"members_can_create_public_repositories":false,
@@ -229,10 +244,17 @@ public sealed class OrgAuditTests
     {
         public List<(HttpMethod Method, string Url, string Body)> Writes { get; } = [];
 
+        /// <summary>Rulesets do próprio repositório bom (GET com includes_parents=false).</summary>
+        public string BomRulesets { get; init; } = "[]";
+
+        /// <summary>Quando ligado, o GitHub rejeita o ruleset do repositório vazio.</summary>
+        public bool RejectVazioRuleset { get; init; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
             var url = request.RequestUri!.ToString();
             if (request.Method != HttpMethod.Get) {
-                Writes.Add((request.Method, url, await request.Content!.ReadAsStringAsync(ct)));
+                Writes.Add((request.Method, url, request.Content is null ? "" : await request.Content.ReadAsStringAsync(ct)));
+                if (RejectVazioRuleset && url.Contains("/repos/acme/vazio/rulesets")) return Json("""{"message":"Validation Failed"}""", HttpStatusCode.UnprocessableEntity);
                 return Json("""{"id": 1}""", HttpStatusCode.Created);
             }
 
@@ -242,11 +264,12 @@ public sealed class OrgAuditTests
             if (url.EndsWith("/orgs/acme/rulesets")) return Json("""[{"id":7,"name":"aedis-main","enforcement":"active"}]""");
             if (url.Contains("/repos/acme/bom/contents/.github/workflows/ci.yml")) return File(PinnedWorkflow);
             if (url.Contains("/repos/acme/bom/contents/.github/workflows")) return Json("""[{"name":"ci.yml","type":"file"}]""");
+            if (url.Contains("/repos/acme/bom/contents/.github/rulesets/main.json")) return File(RulesetWithChecks);
             if (url.Contains("/repos/acme/bom/contents/")) return File("conteudo");
             if (url.Contains("/repos/acme/bom/rules/branches/main")) return Json(Rules(3).ToJsonString());
             if (url.Contains("/repos/acme/bom/commits/main")) return Json("""{"sha":"abc"}""");
             if (url.Contains("/repos/acme/bom/commits/abc/check-runs")) return Json("""{"check_runs":[{"name":"ci / build","conclusion":"success"},{"name":"OpenSSF Scorecard","conclusion":"success"},{"name":"ci / lint","conclusion":"failure"}]}""");
-            if (url.Contains("/repos/acme/bom/rulesets")) return Json("[]");
+            if (url.Contains("/repos/acme/bom/rulesets")) return Json(BomRulesets);
             if (url.Contains("/repos/acme/bom/releases/latest")) return Json("""{"assets":[{"name":"bom.nupkg"},{"name":"bom.nupkg.sigstore"},{"name":"bom.sbom.spdx.json"}]}""");
             if (url.Contains("bestpractices.dev/projects.json?url=https://github.com/acme/bom")) return Json("""[{"id":1,"badge_level":"gold"}]""");
             if (url.Contains("/repos/acme/bom/actions/artifacts?name=")) {
@@ -310,16 +333,48 @@ public sealed class OrgAuditTests
     }
 
     [Fact]
-    public async Task Apply_sem_required_check_nao_escreve_nada_e_lista_os_checks_verdes() {
+    public async Task Apply_sem_required_check_le_os_checks_do_ruleset_versionado_e_protege_repo_sem_arquivo() {
         var fake = new FakeGitHub();
         var stderr = new StringWriter();
         Console.SetError(stderr);
         var root = new System.CommandLine.RootCommand { OrgAuditCommand.Create(() => fake) };
 
-        var exit = await root.Parse(["audit", "--org", "acme", "--repo", "bom", "--apply", "--out", Path.GetTempPath(), "--token", "t"]).InvokeAsync();
+        var exit = await root.Parse(["audit", "--org", "acme", "--apply", "--out", Path.GetTempPath(), "--token", "t"]).InvokeAsync();
+
+        exit.Should().Be(1, "o repositório vazio não alcança o L3, mas recebe o ruleset");
+        var bom = JsonNode.Parse(fake.Writes.Single(w => w.Method == HttpMethod.Post && w.Url.EndsWith("/repos/acme/bom/rulesets")).Body)!;
+        bom["name"]!.GetValue<string>().Should().Be("main");
+        bom.ToJsonString().Should().Contain("Conventional Commits").And.Contain("ci / build");
+        var vazio = fake.Writes.Single(w => w.Method == HttpMethod.Post && w.Url.EndsWith("/repos/acme/vazio/rulesets")).Body;
+        vazio.Should().Contain("pull_request").And.NotContain("required_status_checks");
+        stderr.ToString().Should().Contain("vazio: no required checks");
+    }
+
+    [Fact]
+    public async Task Ruleset_antigo_aedis_main_do_repositorio_e_renomeado_ou_apagado() {
+        var renamed = new FakeGitHub { BomRulesets = """[{"id":3,"name":"aedis-main","source_type":"Repository"}]""" };
+        var root = new System.CommandLine.RootCommand { OrgAuditCommand.Create(() => renamed) };
+        await root.Parse(["audit", "--org", "acme", "--repo", "bom", "--apply", "--out", Path.GetTempPath(), "--token", "t"]).InvokeAsync();
+        renamed.Writes.Should().ContainSingle(w => w.Url.Contains("/repos/acme/bom/rulesets")).Which.Should().Match<(HttpMethod Method, string Url, string Body)>(
+            w => w.Method == HttpMethod.Put && w.Url.EndsWith("/rulesets/3") && w.Body.Contains("\"name\":\"main\""));
+
+        var both = new FakeGitHub { BomRulesets = """[{"id":3,"name":"aedis-main"},{"id":4,"name":"main"}]""" };
+        root = new System.CommandLine.RootCommand { OrgAuditCommand.Create(() => both) };
+        await root.Parse(["audit", "--org", "acme", "--repo", "bom", "--apply", "--out", Path.GetTempPath(), "--token", "t"]).InvokeAsync();
+        both.Writes.Where(w => w.Url.Contains("/repos/acme/bom/rulesets")).Select(w => (w.Method, w.Url[w.Url.LastIndexOf('/')..]))
+            .Should().Equal((HttpMethod.Delete, "/3"), (HttpMethod.Put, "/4"));
+    }
+
+    [Fact]
+    public async Task Repositorio_que_rejeita_o_ruleset_nao_impede_os_demais_e_sai_com_2() {
+        var fake = new FakeGitHub { RejectVazioRuleset = true };
+        Console.SetError(new StringWriter());
+        var root = new System.CommandLine.RootCommand { OrgAuditCommand.Create(() => fake) };
+
+        var exit = await root.Parse(["audit", "--org", "acme", "--apply", "--out", Path.GetTempPath(), "--token", "t"]).InvokeAsync();
 
         exit.Should().Be(2);
-        fake.Writes.Should().BeEmpty();
-        stderr.ToString().Should().Contain("--required-check").And.Contain("ci / build");
+        fake.Writes.Should().Contain(w => w.Method == HttpMethod.Post && w.Url.EndsWith("/repos/acme/bom/rulesets"));
+        fake.Writes.Should().Contain(w => w.Url.EndsWith("/orgs/acme/rulesets/7"), "os guardrails de organização seguem sendo aplicados");
     }
 }

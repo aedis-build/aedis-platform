@@ -30,6 +30,11 @@ public sealed class MergePolicy
     public bool AllowBreaking { get; set; }
     /// <summary>Método de merge do auto-merge: squash, merge ou rebase.</summary>
     public string MergeMethod { get; set; } = "squash";
+    /// <summary>
+    ///     Slug do time cujos membros contam como mantenedores na revisão humana (ex.: <c>maintainers</c>); vazio usa a
+    ///     associação do revisor com o repositório (OWNER, MEMBER, COLLABORATOR).
+    /// </summary>
+    public string? MaintainersTeam { get; set; }
 
     /// <summary>Desserializa a política; nulo/vazio devolve os padrões (sem autores confiáveis, logo sem aprovação).</summary>
     public static MergePolicy Parse(string? yaml) {
@@ -78,6 +83,8 @@ public sealed record PullRequestSnapshot
     public JsonObject? BaseCoverage { get; init; }
     /// <summary>Mantenedores humanos (não o autor) cuja revisão mais recente aprova o head avaliado.</summary>
     public IReadOnlyList<string> HumanApprovers { get; init; } = [];
+    /// <summary>Por que o time de mantenedores da política não pôde ser lido; nulo quando leu ou quando não há time.</summary>
+    public string? MaintainersTeamError { get; init; }
 }
 
 /// <summary>Um critério do portão: <c>pass</c>, <c>fail</c> (exige humano) ou <c>pending</c> (esperar).</summary>
@@ -116,6 +123,9 @@ public static partial class MergeGate
         Add("breaking", policy.AllowBreaking || !breaking || reviewed, "breaking change requires human review");
         var human = pr.Files.Where(f => policy.HumanRequiredPaths.Any(g => GlobMatches(g, f))).ToList();
         Add("paths", human.Count == 0 || reviewed, "human review required for: " + string.Join(", ", human.Take(5)));
+        // Sem ler o time não há como saber quem é mantenedor: bloqueia em vez de afrouxar a regra.
+        if (pr.MaintainersTeamError is { } teamError && (human.Count > 0 || breaking))
+            Add("maintainers-team", false, teamError);
         Add("size", pr.ChangedLines <= policy.MaxChangedLines, $"{pr.ChangedLines} changed lines > {policy.MaxChangedLines}");
 
         switch (pr.MergeableState) {
@@ -210,7 +220,11 @@ public static partial class MergeGate
     ///     usuário (não bot) com associação OWNER, MEMBER ou COLLABORATOR, diferente do autor; uma revisão posterior
     ///     pedindo mudanças ou dispensada anula a aprovação anterior da mesma pessoa.
     /// </summary>
-    public static IReadOnlyList<string> HumanApprovers(JsonArray reviews, string author, string headSha) =>
+    /// <param name="reviews">Revisões da PR, na ordem em que foram enviadas.</param>
+    /// <param name="author">Login do autor da PR, que nunca conta.</param>
+    /// <param name="headSha">Commit avaliado; aprovações de commits anteriores não contam.</param>
+    /// <param name="maintainers">Membros do time de mantenedores; quando informado, substitui a regra da associação.</param>
+    public static IReadOnlyList<string> HumanApprovers(JsonArray reviews, string author, string headSha, IReadOnlyCollection<string>? maintainers = null) =>
         reviews.OfType<JsonObject>()
             .Where(r => r["user"]?["type"]?.GetValue<string>() == "User"
                         && r["state"]?.GetValue<string>() is "APPROVED" or "CHANGES_REQUESTED" or "DISMISSED")
@@ -219,7 +233,9 @@ public static partial class MergeGate
             .Where(r => r["state"]!.GetValue<string>() == "APPROVED"
                         && r["commit_id"]?.GetValue<string>() == headSha
                         && !string.Equals(r["user"]!["login"]!.GetValue<string>(), author, StringComparison.OrdinalIgnoreCase)
-                        && r["author_association"]?.GetValue<string>() is "OWNER" or "MEMBER" or "COLLABORATOR")
+                        && (maintainers is null
+                            ? r["author_association"]?.GetValue<string>() is "OWNER" or "MEMBER" or "COLLABORATOR"
+                            : maintainers.Contains(r["user"]!["login"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase)))
             .Select(r => r["user"]!["login"]!.GetValue<string>())
             .ToList();
 
@@ -234,6 +250,7 @@ public static partial class MergeGate
         "size" => "Change size",
         "mergeable" => "Mergeable",
         "coverage-regression" => "Coverage does not drop",
+        "maintainers-team" => "Maintainers team",
         _ when id.StartsWith("check:", StringComparison.Ordinal) => $"Check `{id[6..]}`",
         _ when id.StartsWith("summary:", StringComparison.Ordinal) => $"Report `{id[8..]}`",
         _ => id
