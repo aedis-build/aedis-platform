@@ -76,6 +76,8 @@ public sealed record PullRequestSnapshot
     public IReadOnlyDictionary<string, JsonObject?> Summaries { get; init; } = new Dictionary<string, JsonObject?>();
     /// <summary>Último <c>coverage-summary</c> do branch base, para a regra de não regressão.</summary>
     public JsonObject? BaseCoverage { get; init; }
+    /// <summary>Mantenedores humanos (não o autor) cuja revisão mais recente aprova o head avaliado.</summary>
+    public IReadOnlyList<string> HumanApprovers { get; init; } = [];
 }
 
 /// <summary>Um critério do portão: <c>pass</c>, <c>fail</c> (exige humano) ou <c>pending</c> (esperar).</summary>
@@ -108,9 +110,12 @@ public static partial class MergeGate
         var trailer = pr.CommitMessages.Append(pr.Body).FirstOrDefault(m => ForbiddenTrailer().IsMatch(m));
         Add("trailers", trailer is null, "forbidden trailer (AI co-authorship) in a commit or in the body");
         var breaking = BreakingTitle().IsMatch(pr.Title) || pr.Body.Contains("BREAKING CHANGE", StringComparison.Ordinal) || pr.CommitMessages.Any(m => m.Contains("BREAKING CHANGE", StringComparison.Ordinal));
-        Add("breaking", policy.AllowBreaking || !breaking, "breaking change requires human review");
+        // A revisão humana que a política exige se cumpre com um mantenedor aprovando o head; o portão então dá a
+        // segunda aprovação, a do processo automatizado, sem nunca substituir a humana.
+        var reviewed = pr.HumanApprovers.Count > 0;
+        Add("breaking", policy.AllowBreaking || !breaking || reviewed, "breaking change requires human review");
         var human = pr.Files.Where(f => policy.HumanRequiredPaths.Any(g => GlobMatches(g, f))).ToList();
-        Add("paths", human.Count == 0, "human review required for: " + string.Join(", ", human.Take(5)));
+        Add("paths", human.Count == 0 || reviewed, "human review required for: " + string.Join(", ", human.Take(5)));
         Add("size", pr.ChangedLines <= policy.MaxChangedLines, $"{pr.ChangedLines} changed lines > {policy.MaxChangedLines}");
 
         switch (pr.MergeableState) {
@@ -199,6 +204,24 @@ public static partial class MergeGate
         sb.AppendLine("<sub>Policy: <code>.github/aedis-merge-policy.yaml</code> on the default branch.</sub>");
         return sb.ToString();
     }
+
+    /// <summary>
+    ///     Logins dos mantenedores humanos cuja revisão mais recente aprova <paramref name="headSha" />: conta só
+    ///     usuário (não bot) com associação OWNER, MEMBER ou COLLABORATOR, diferente do autor; uma revisão posterior
+    ///     pedindo mudanças ou dispensada anula a aprovação anterior da mesma pessoa.
+    /// </summary>
+    public static IReadOnlyList<string> HumanApprovers(JsonArray reviews, string author, string headSha) =>
+        reviews.OfType<JsonObject>()
+            .Where(r => r["user"]?["type"]?.GetValue<string>() == "User"
+                        && r["state"]?.GetValue<string>() is "APPROVED" or "CHANGES_REQUESTED" or "DISMISSED")
+            .GroupBy(r => r["user"]!["login"]!.GetValue<string>(), StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.Last())
+            .Where(r => r["state"]!.GetValue<string>() == "APPROVED"
+                        && r["commit_id"]?.GetValue<string>() == headSha
+                        && !string.Equals(r["user"]!["login"]!.GetValue<string>(), author, StringComparison.OrdinalIgnoreCase)
+                        && r["author_association"]?.GetValue<string>() is "OWNER" or "MEMBER" or "COLLABORATOR")
+            .Select(r => r["user"]!["login"]!.GetValue<string>())
+            .ToList();
 
     /// <summary>Nome legível de um critério do portão, para o comentário na PR.</summary>
     public static string Label(string id) => id switch {
