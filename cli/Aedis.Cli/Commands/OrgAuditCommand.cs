@@ -12,8 +12,9 @@ namespace Aedis.Cli.Commands;
 ///     grava <c>org-audit-summary.json</c>, <c>org-audit.md</c> e <c>org-audit.html</c> (em inglês, para a
 ///     organização e seus auditores) e, com <c>--apply</c>, aplica os guardrails do nível pedido: ruleset de
 ///     organização para todos os repositórios, configurações de segurança da org, permissões do Actions e o
-///     ruleset de cada repositório com os checks obrigatórios. Sai com 1 enquanto a organização ou algum
-///     repositório não alcançar o nível.
+///     ruleset <c>main</c> de cada repositório com os checks obrigatórios de <c>.github/rulesets/main.json</c>.
+///     Sai com 1 enquanto a organização ou algum repositório não alcançar o nível e com 2 quando algum
+///     repositório rejeitar o ruleset.
 /// </summary>
 public static class OrgAuditCommand
 {
@@ -24,18 +25,27 @@ public static class OrgAuditCommand
         var repos = new Option<string[]>("--repo") { Description = "Restrict to these repositories", AllowMultipleArgumentsPerToken = true };
         var apply = new Option<bool>("--apply") { Description = "Apply the organization guardrails and create/update the default-branch ruleset of each repository" };
         var approvals = new Option<int?>("--approvals") { Description = "Approvals required by the rulesets (default: 0 at L1, 1 at L2/L3)" };
-        var checks = new Option<string[]>("--required-check") { Description = "Required status check contexts for the repository rulesets; mandatory with --apply (only checks that run on every pull request, without path filters)", AllowMultipleArgumentsPerToken = true };
+        var checks = new Option<string[]>("--required-check") { Description = "Required status check contexts for the repository rulesets, overriding each repository's .github/rulesets/main.json (only checks that run on every pull request, without path filters)", AllowMultipleArgumentsPerToken = true };
         var noBypass = new Option<bool>("--no-admin-bypass") { Description = "Do not let administrators bypass the rulesets through pull requests" };
         var output = new Option<string>("--out") { Description = "Report directory", DefaultValueFactory = _ => "." };
-        var token = new Option<string?>("--token") { Description = "GitHub token (default: GITHUB_TOKEN, GH_TOKEN or `gh auth token`)" };
+        var token = new Option<string?>("--token") { Description = "GitHub token (default: installation token of the GitHub App in AEDIS_APP_ID/AEDIS_APP_PRIVATE_KEY, else GITHUB_TOKEN, GH_TOKEN or `gh auth token`)" };
 
         var command = new Command("audit", "Audits the organization and its repositories against the Aedis conformance levels and, with --apply, applies the guardrails.") {
             org, level, repos, apply, approvals, checks, noBypass, output, token
         };
         command.SetAction(async (parse, cancellationToken) => {
-            var handler = handlerFactory?.Invoke() ?? new HttpClientHandler();
-            var api = new GitHubApi(new HttpClient(handler), parse.GetValue(token) ?? GitHubApi.ResolveToken());
             var orgName = parse.GetValue(org)!;
+            HttpClient Http() => new(handlerFactory?.Invoke() ?? new HttpClientHandler());
+            var accessToken = parse.GetValue(token);
+            // Rodando agendado, a App "Aedis Compliance" dá um token de instalação de curta duração em vez de um PAT.
+            var appId = Environment.GetEnvironmentVariable("AEDIS_APP_ID");
+            var appKey = Environment.GetEnvironmentVariable("AEDIS_APP_PRIVATE_KEY");
+            if (accessToken is null && !string.IsNullOrWhiteSpace(appId) && !string.IsNullOrWhiteSpace(appKey)) {
+                if (File.Exists(appKey)) appKey = await File.ReadAllTextAsync(appKey, cancellationToken);
+                accessToken = await new GitHubApi(Http(), null).CreateInstallationTokenAsync(orgName, GitHubAppAuth.CreateJwt(appId, appKey), cancellationToken);
+            }
+
+            var api = new GitHubApi(Http(), accessToken ?? GitHubApi.ResolveToken());
             var targetLevel = Math.Clamp(parse.GetValue(level), 1, 3);
             var requiredApprovals = parse.GetValue(approvals) ?? (targetLevel >= 2 ? 1 : 0);
             var adminBypass = !parse.GetValue(noBypass);
@@ -44,26 +54,33 @@ public static class OrgAuditCommand
             Directory.CreateDirectory(outDir);
 
             var audits = new List<RepoAudit>();
-            var missingChecks = false;
+            var applyFailed = false;
             var practices = RepoAuditor.LoadBestPractices(Directory.GetCurrentDirectory());
             foreach (var (name, branch) in await api.ListRepositoriesAsync(orgName, cancellationToken)) {
                 if (only.Length > 0 && !only.Contains(name, StringComparer.OrdinalIgnoreCase)) continue;
                 if (only.Length == 0 && name == ".github") continue; // repositório de perfil da organização, sem código
                 var snapshot = await SnapshotAsync(api, orgName, name, branch, practices, cancellationToken);
                 var audit = RepoAuditor.Evaluate(snapshot, targetLevel, Directory.GetCurrentDirectory());
-                if (parse.GetValue(apply) && parse.GetValue(checks) is not { Length: > 0 }) {
-                    // Derivar da lista de checks verdes em main já exigiu um job filtrado por paths e travou o repositório: a escolha é do operador.
-                    missingChecks = true;
-                    Console.Error.WriteLine($"{name}: pass --required-check; successful checks on the latest commit of {branch}: " +
-                                            string.Join(" | ", await api.GetSuccessfulCheckNamesAsync(orgName, name, branch, cancellationToken)));
-                }
-                else if (parse.GetValue(apply)) {
-                    var required = parse.GetValue(checks)!;
-                    var ruleset = RulesetGuardrail.Build(targetLevel, requiredApprovals, required, adminBypass);
-                    audit.RulesetApplied = await api.UpsertRulesetAsync(orgName, name, ruleset, cancellationToken);
-                    audit.RequiredChecks = required;
-                    // O portão de merge (aedis pr gate) habilita auto-merge na PR aprovada; o repositório precisa permitir.
-                    await api.PatchRepositoryAsync(orgName, name, new JsonObject { ["allow_auto_merge"] = true, ["delete_branch_on_merge"] = true }, cancellationToken);
+                if (parse.GetValue(apply)) {
+                    // Derivar da lista de checks verdes em main já exigiu um job filtrado por paths e travou o repositório: a escolha é do
+                    // operador, versionada no ruleset do repositório ou passada na linha de comando.
+                    IReadOnlyList<string> required = parse.GetValue(checks) is { Length: > 0 } given
+                        ? given
+                        : RulesetGuardrail.RequiredChecksFrom(snapshot.Files.GetValueOrDefault(RulesetGuardrail.RulesetFile));
+                    if (required.Count == 0)
+                        Console.Error.WriteLine($"{name}: no required checks in {RulesetGuardrail.RulesetFile}; ruleset applied without them. Successful checks on the latest commit of {branch}: " +
+                                                string.Join(" | ", await api.GetSuccessfulCheckNamesAsync(orgName, name, branch, cancellationToken)));
+                    try {
+                        var ruleset = RulesetGuardrail.Build(targetLevel, requiredApprovals, required, adminBypass);
+                        audit.RulesetApplied = await api.UpsertRulesetAsync(orgName, name, ruleset, cancellationToken, legacyName: RulesetGuardrail.Name);
+                        audit.RequiredChecks = required;
+                        // O portão de merge (aedis pr gate) habilita auto-merge na PR aprovada; o repositório precisa permitir.
+                        await api.PatchRepositoryAsync(orgName, name, new JsonObject { ["allow_auto_merge"] = true, ["delete_branch_on_merge"] = true }, cancellationToken);
+                    }
+                    catch (InvalidOperationException ex) {
+                        applyFailed = true;
+                        Console.Error.WriteLine($"{name}: guardrails not applied: {ex.Message}");
+                    }
                 }
 
                 audits.Add(audit);
@@ -72,8 +89,6 @@ public static class OrgAuditCommand
                 foreach (var item in audit.Items.Where(i => i.Status != "pass"))
                     Console.WriteLine($"        {(item.Status == "fail" ? "[FAIL]" : "[ ?  ]")} {item.Id} {item.Criterion}{(string.IsNullOrEmpty(item.Detail) ? "" : " — " + item.Detail)}");
             }
-
-            if (missingChecks) return 2;
 
             var applied = new List<string>();
             if (parse.GetValue(apply)) {
@@ -109,7 +124,7 @@ public static class OrgAuditCommand
                 ToBadge("aedis", Math.Min(orgAudit.LevelAchieved, audits.Count == 0 ? 0 : audits.Min(a => a.LevelAchieved))), cancellationToken);
             var ok = audits.Count > 0 && audits.All(a => a.LevelAchieved >= targetLevel) && orgAudit.LevelAchieved >= targetLevel;
             Console.WriteLine($"report written to {outDir} — organization L{orgAudit.LevelAchieved}, {audits.Count(a => a.LevelAchieved >= targetLevel)}/{audits.Count} repositories at L{targetLevel}");
-            return ok ? 0 : 1;
+            return applyFailed ? 2 : ok ? 0 : 1;
         });
         return command;
     }

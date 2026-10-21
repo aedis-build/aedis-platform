@@ -1,0 +1,49 @@
+# Guardrails da organização: a cada 6 h (e manual) roda `aedis org audit --level 3 --apply` com o token de instalação
+# da GitHub App "Aedis Compliance", não com um PAT. Todo repositório, inclusive um recém-criado, recebe o ruleset `main`
+# com os checks obrigatórios do seu .github/rulesets/main.json. Sem o arquivo, o ruleset vai sem checks obrigatórios.
+# A App precisa de Administration (write) nos repositórios e de Organization administration (write) na organização.
+# O relatório vai para o resumo do job e para o artefato `org-audit`. O job falha só quando um guardrail é rejeitado
+# (exit 2), não porque algum repositório ainda está abaixo do L3 (exit 1).
+name: org-guardrails
+
+on:
+  schedule:
+    - cron: "41 */6 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: org-guardrails
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    name: Org guardrails
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: 10.0.x
+      - name: Auditar e aplicar os guardrails L3
+        env:
+          AEDIS_APP_ID: ${{ secrets.AEDIS_APP_ID }}
+          AEDIS_APP_PRIVATE_KEY: ${{ secrets.AEDIS_APP_PRIVATE_KEY }}
+        run: |
+          set -uo pipefail
+          status=0
+          dotnet run --project cli/Aedis.Cli -c Release -- org audit \
+            --org "$GITHUB_REPOSITORY_OWNER" --level 3 --apply --out org-audit || status=$?
+          if [ -f org-audit/org-audit.md ]; then cat org-audit/org-audit.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ "$status" -ne 0 ] && [ "$status" -ne 1 ]; then exit "$status"; fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: org-audit
+          path: org-audit/
+          if-no-files-found: ignore

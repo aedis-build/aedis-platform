@@ -12,8 +12,27 @@ namespace Aedis.Cli.Org;
 /// </summary>
 public static class RulesetGuardrail
 {
-    /// <summary>Nome do ruleset gerido pela CLI (criado ou atualizado pelo nome), no repositório e na organização.</summary>
+    /// <summary>Nome do ruleset de organização gerido pela CLI (criado ou atualizado pelo nome).</summary>
     public const string Name = "aedis-main";
+
+    /// <summary>Nome do ruleset de repositório: o mesmo de <c>.github/rulesets/main.json</c>, para não haver dois rulesets sobrepostos.</summary>
+    public const string RepositoryName = "main";
+
+    /// <summary>Caminho do ruleset versionado de onde vêm os checks obrigatórios de cada repositório.</summary>
+    public const string RulesetFile = ".github/rulesets/main.json";
+
+    /// <summary>Contexts de <c>required_status_checks</c> do ruleset versionado; vazio quando o arquivo falta, é inválido ou não exige checks.</summary>
+    public static IReadOnlyList<string> RequiredChecksFrom(string? rulesetJson) {
+        try {
+            return JsonNode.Parse(rulesetJson ?? "")?["rules"]?.AsArray().OfType<JsonObject>()
+                .Where(r => r["type"]?.GetValue<string>() == "required_status_checks")
+                .SelectMany(r => r["parameters"]?["required_status_checks"]?.AsArray().OfType<JsonObject>() ?? [])
+                .Select(c => c["context"]?.GetValue<string>()).OfType<string>().Distinct(StringComparer.Ordinal).ToList() ?? [];
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException) {
+            return [];
+        }
+    }
 
     /// <summary>Corpo do ruleset para a API do GitHub no nível pedido; com <paramref name="allRepositories" />, vira ruleset de organização.</summary>
     public static JsonObject Build(int level, int approvals, IReadOnlyList<string> requiredChecks, bool adminBypass, bool allRepositories = false) {
@@ -56,7 +75,7 @@ public static class RulesetGuardrail
             conditions["repository_name"] = new JsonObject { ["include"] = new JsonArray("~ALL"), ["exclude"] = new JsonArray() };
 
         return new JsonObject {
-            ["name"] = Name,
+            ["name"] = allRepositories ? Name : RepositoryName,
             ["target"] = "branch",
             ["enforcement"] = "active",
             ["conditions"] = conditions,

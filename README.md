@@ -105,7 +105,10 @@ proteção viva do branch padrão e mínimos do OpenSSF Scorecard (`conformance/
 autocontido no estilo dos scanners, com a organização, todos os critérios por repositório, checks obrigatórios e notas
 do Scorecard por check). Com `--apply` aplica os guardrails do nível em toda a organização de uma vez: ruleset de
 organização `aedis-main` para o branch padrão de todos os repositórios, permissões de workflow do Actions (token só
-leitura, sem aprovar PRs), configurações de segurança da org e o ruleset de cada repositório com os checks informados.
+leitura, sem aprovar PRs), configurações de segurança da org e o ruleset `main` de cada repositório, com os checks obrigatórios do seu
+`.github/rulesets/main.json`. É o mesmo nome do arquivo versionado, então não ficam dois rulesets sobrepostos: um
+`aedis-main` antigo no repositório é renomeado, ou apagado quando o `main` já existe. O workflow `org-guardrails` roda
+isso a cada 6 h com a GitHub App, e um repositório novo recebe os guardrails sem ninguém precisar lembrar.
 2FA não tem API de escrita e segue como item a ligar na UI da organização.
 
 A régua pede evidência, não só configuração: assets da última release (assinaturas Sigstore, SBOM), selo registrado
@@ -124,10 +127,14 @@ que o critério `release_notes` do OpenSSF Best Practices pede: um resumo legív
 
 ```bash
 aedis org audit --org minha-org --level 3 --out ./auditoria
-aedis org audit --org minha-org --level 3 --apply --required-check "ci / build"
+aedis org audit --org minha-org --level 3 --apply
+aedis org audit --org minha-org --repo api --apply --required-check "ci / build"
 ```
 
-Autenticação: `GITHUB_TOKEN`/`GH_TOKEN` ou a sessão do `gh`. Com `--apply`, o token precisa de administração
-dos repositórios e `--required-check` é obrigatório: informe só checks que rodam em toda PR (um job com filtro de
-`paths` como check obrigatório trava o branch); sem a opção o comando lista os checks verdes de cada repositório e sai com 2. Por padrão o papel de administrador pode contornar o ruleset via PR (fica auditável); use
+Autenticação: o token de instalação da GitHub App em `AEDIS_APP_ID`/`AEDIS_APP_PRIVATE_KEY` (o que o workflow usa), ou
+então `GITHUB_TOKEN`/`GH_TOKEN` ou a sessão do `gh`. Com `--apply`, o token precisa de administração dos repositórios
+e da organização. Os checks obrigatórios vêm do `.github/rulesets/main.json` de cada repositório, e `--required-check`
+os substitui. Ponha ali só checks que rodam em toda PR: um job com filtro de `paths` como check obrigatório trava o
+branch. Um repositório sem checks no arquivo recebe o ruleset sem eles, e o comando lista os checks verdes do
+repositório. O comando sai com 2 quando algum repositório rejeita o ruleset. Por padrão o papel de administrador pode contornar o ruleset via PR (fica auditável); use
 `--no-admin-bypass` quando houver dois ou mais mantenedores.
