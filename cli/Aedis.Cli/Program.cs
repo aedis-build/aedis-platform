@@ -18,5 +18,8 @@ root.Subcommands.Add(org);
 var pr = new Command("pr", "Pull requests: portão de merge pela política do repositório.");
 pr.Subcommands.Add(PrGateCommand.Create());
 root.Subcommands.Add(pr);
+var agent = new Command("agent", "Agent identities: GitHub App tokens for agents that open pull requests.");
+agent.Subcommands.Add(AgentTokenCommand.Create());
+root.Subcommands.Add(agent);
 
 return await root.Parse(args).InvokeAsync();

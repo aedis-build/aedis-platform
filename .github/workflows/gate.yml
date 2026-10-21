@@ -1,17 +1,18 @@
-# Portão de merge deste repositório: a cada run do CI concluída numa PR, avalia a política e aprova como a App.
+# Portão de merge deste repositório: a cada run do CI concluída numa PR, e a cada aprovação humana (review-signal),
+# avalia a política e aprova como a App.
 # Roda a partir da main (workflow_run) e não toca o código da PR.
 name: gate
 
 on:
   workflow_run:
-    workflows: [ci]
+    workflows: [ci, review-signal]
     types: [completed]
 
 permissions: {}
 
 jobs:
   gate:
-    if: github.event.workflow_run.event == 'pull_request'
+    if: contains(fromJSON('["pull_request", "pull_request_review"]'), github.event.workflow_run.event)
     uses: ./.github/workflows/merge-gate.yml
     permissions:
       contents: read

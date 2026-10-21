@@ -103,6 +103,7 @@ public static class PrGateCommand
         var number = pull["number"]!.GetValue<int>();
         var head = pull["head"]!["sha"]!.GetValue<string>();
         var baseBranch = pull["base"]!["ref"]!.GetValue<string>();
+        var author = pull["user"]?["login"]?.GetValue<string>() ?? "";
         var rules = await api.GetBranchRulesAsync(org, repo, baseBranch, ct);
         var required = rules.OfType<JsonObject>().Where(r => r["type"]?.GetValue<string>() == "required_status_checks")
             .SelectMany(r => (r["parameters"]?["required_status_checks"] as JsonArray)?.OfType<JsonObject>() ?? [])
@@ -117,7 +118,7 @@ public static class PrGateCommand
         return new PullRequestSnapshot {
             Number = number,
             NodeId = pull["node_id"]?.GetValue<string>() ?? "",
-            Author = pull["user"]?["login"]?.GetValue<string>() ?? "",
+            Author = author,
             HeadSha = head,
             BaseBranch = baseBranch,
             Title = pull["title"]?.GetValue<string>() ?? "",
@@ -132,7 +133,8 @@ public static class PrGateCommand
             RequiredChecks = required,
             CheckConclusions = await api.GetCheckConclusionsAsync(org, repo, head, ct),
             Summaries = summaries,
-            BaseCoverage = policy.CoverageNoRegression ? await api.TryGetArtifactSummaryAsync(org, repo, "coverage-summary", ct, branch: baseBranch) : null
+            BaseCoverage = policy.CoverageNoRegression ? await api.TryGetArtifactSummaryAsync(org, repo, "coverage-summary", ct, branch: baseBranch) : null,
+            HumanApprovers = MergeGate.HumanApprovers(await api.ListPullRequestReviewsAsync(org, repo, number, ct), author, head)
         };
     }
 }
