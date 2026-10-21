@@ -156,7 +156,7 @@ public sealed class MergeGateTests
     private static byte[] FromBase64Url(string s) => Convert.FromBase64String(s.Replace('-', '+').Replace('_', '/').PadRight(s.Length + (4 - s.Length % 4) % 4, '='));
 
     /// <summary>API simulada: PR 5 pronta; resolução por head SHA; aprovação e auto-merge como App.</summary>
-    private sealed class FakeGitHub : HttpMessageHandler
+    private sealed class FakeGitHub(string policy = Policy, string files = "src/Api/Thing.cs", string? teamMembers = "[]", string reviews = "[]") : HttpMessageHandler
     {
         public List<(HttpMethod Method, string Url, string Auth, string Body)> Writes { get; } = [];
 
@@ -172,10 +172,12 @@ public sealed class MergeGateTests
 
             if (url.Contains("/commits/abcdef1234567890/pulls")) return Json("""[{"number":5,"state":"open","head":{"sha":"abcdef1234567890"}}]""");
             if (url.EndsWith("/pulls/5")) return Json("""{"number":5,"node_id":"PR_1","title":"feat(api): nova rota","body":"","draft":false,"additions":100,"deletions":20,"mergeable_state":"blocked","user":{"login":"octo"},"head":{"sha":"abcdef1234567890","repo":{"full_name":"acme/bom","fork":false}},"base":{"ref":"main"}}""");
-            if (url.Contains("/pulls/5/files")) return Json("""[{"filename":"src/Api/Thing.cs"}]""");
+            if (url.Contains("/pulls/5/files")) return Json($$"""[{"filename":"{{files}}"}]""");
+            if (url.Contains("/pulls/5/reviews")) return Json(reviews);
+            if (url.Contains("/teams/maintainers/members")) return teamMembers is null ? new HttpResponseMessage(HttpStatusCode.Forbidden) : Json(teamMembers);
             if (url.Contains("/pulls/5/commits")) return Json("""[{"commit":{"message":"feat(api): nova rota"}}]""");
             if (url.Contains("/issues/5/comments")) return Json("[]");
-            if (url.Contains("/contents/.github/aedis-merge-policy.yaml")) return Json($$"""{"type":"file","content":"{{Convert.ToBase64String(Encoding.UTF8.GetBytes(Policy))}}"}""");
+            if (url.Contains("/contents/.github/aedis-merge-policy.yaml")) return Json($$"""{"type":"file","content":"{{Convert.ToBase64String(Encoding.UTF8.GetBytes(policy))}}"}""");
             if (url.Contains("/rules/branches/main")) return Json("""[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ci / build"}]}}]""");
             if (url.Contains("/commits/abcdef1234567890/check-runs")) return Json("""{"check_runs":[{"name":"ci / build","status":"completed","conclusion":"success","started_at":"2026-10-18T10:00:00Z"}]}""");
             if (url.Contains("/actions/artifacts?name=")) {
@@ -221,6 +223,39 @@ public sealed class MergeGateTests
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/pulls/5/reviews")).Which.Should().Match<(HttpMethod, string, string Auth, string Body)>(w => w.Auth == "ghs_app" && w.Body.Contains("APPROVE"));
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/graphql")).Which.Body.Should().Contain("SQUASH").And.Contain("PR_1");
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/issues/5/comments")).Which.Body.Should().Contain(MergeGate.CommentMarker);
+    }
+
+    private const string TeamPolicy = Policy + "\nmaintainersTeam: maintainers\n";
+
+    private static async Task<JsonNode> RunGate(FakeGitHub fake) {
+        using var key = RSA.Create(2048);
+        var outDir = Path.Combine(Path.GetTempPath(), "aedis-gate-" + Guid.NewGuid().ToString("N"));
+        var root = new System.CommandLine.RootCommand { PrGateCommand.Create(() => fake) };
+        Console.SetError(new StringWriter());
+        await root.Parse(["gate", "--org", "acme", "--repo", "bom", "--pr", "5", "--app-id", "12345", "--app-key", key.ExportRSAPrivateKeyPem(), "--out", outDir, "--token", "t"]).InvokeAsync();
+        return JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(outDir, "merge-gate-summary.json")))!;
+    }
+
+    [Fact]
+    public async Task Caminho_sensivel_aprovado_por_membro_do_time_e_aprovado_pelo_portao() {
+        const string review = """[{"user":{"login":"maint","type":"User"},"state":"APPROVED","commit_id":"abcdef1234567890","author_association":"MEMBER"}]""";
+        var fake = new FakeGitHub(TeamPolicy, ".github/workflows/ci.yml", """[{"login":"maint"}]""", review);
+
+        var summary = await RunGate(fake);
+
+        summary["decision"]!.GetValue<string>().Should().Be("approve");
+        fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/pulls/5/reviews"));
+    }
+
+    [Fact]
+    public async Task Time_ilegivel_bloqueia_a_mudanca_sensivel_e_explica_o_motivo() {
+        var fake = new FakeGitHub(TeamPolicy, ".github/workflows/ci.yml", teamMembers: null);
+
+        var summary = await RunGate(fake);
+
+        summary["decision"]!.GetValue<string>().Should().Be("block");
+        summary.ToJsonString().Should().Contain("Members: Read-only");
+        fake.Writes.Should().NotContain(w => w.Url.EndsWith("/pulls/5/reviews"));
     }
 
     [Fact]
