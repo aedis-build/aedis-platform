@@ -76,8 +76,10 @@ avalia e comenta. O `GITHUB_TOKEN` nunca aprova (ORG-02). No L3 a revisão de co
 não é code owner, de propósito.
 
 **Revisão humana como segunda aprovação.** Quando a PR toca caminho reservado a humano ou traz breaking change, o
-portão espera um mantenedor (usuário, não bot, com associação OWNER, MEMBER ou COLLABORATOR, diferente do autor)
-aprovar o commit atual. Com essa aprovação, confere os demais critérios e aprova como a App: são as duas aprovações
+portão espera um mantenedor (usuário, não bot, diferente do autor) aprovar o commit atual. Mantenedor é membro do
+time indicado em `maintainersTeam` na política, lido pela App do portão com a permissão Members: Read-only; sem o
+time, vale a associação OWNER, MEMBER ou COLLABORATOR. Se o time não puder ser lido, o portão bloqueia a mudança
+sensível em vez de afrouxar a regra. Com essa aprovação, confere os demais critérios e aprova como a App: são as duas aprovações
 que o ruleset L3 exige. O `review-signal.yml` dispara o portão de novo a cada aprovação, sem permissão nenhuma; o
 `gate.yml` escuta o fim dele por `workflow_run`, que sempre roda a versão de `main`.
 

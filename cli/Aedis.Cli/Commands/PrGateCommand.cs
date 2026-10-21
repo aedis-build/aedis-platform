@@ -45,8 +45,6 @@ public static class PrGateCommand
             }
 
             var mergePolicy = MergePolicy.Parse(await api.TryGetFileAsync(orgName, repoName, parse.GetValue(policy)!, cancellationToken));
-            var snapshot = await SnapshotAsync(api, orgName, repoName, pull, mergePolicy, cancellationToken);
-            var result = MergeGate.Evaluate(mergePolicy, snapshot);
             string? action = null;
 
             // A App é quem aprova e quem comenta: o GITHUB_TOKEN do job é só leitura e a organização proíbe que ele aprove.
@@ -58,6 +56,10 @@ public static class PrGateCommand
                 var installationToken = await api.CreateInstallationTokenAsync(orgName, GitHubAppAuth.CreateJwt(id, key), cancellationToken);
                 app = new GitHubApi(new HttpClient(handlerFactory?.Invoke() ?? new HttpClientHandler()), installationToken);
             }
+
+            // O time de mantenedores só é legível pela App (Members: Read-only); o GITHUB_TOKEN do job não lê a organização.
+            var snapshot = await SnapshotAsync(api, orgName, repoName, pull, mergePolicy, cancellationToken, app);
+            var result = MergeGate.Evaluate(mergePolicy, snapshot);
 
             if (result.Decision == "approve" && parse.GetValue(approve)) {
                 if (app is null) {
@@ -99,7 +101,7 @@ public static class PrGateCommand
     }
 
     /// <summary>Baixa arquivos, commits, checks, sumários do head e a cobertura do branch base.</summary>
-    public static async Task<PullRequestSnapshot> SnapshotAsync(GitHubApi api, string org, string repo, JsonObject pull, MergePolicy policy, CancellationToken ct) {
+    public static async Task<PullRequestSnapshot> SnapshotAsync(GitHubApi api, string org, string repo, JsonObject pull, MergePolicy policy, CancellationToken ct, GitHubApi? teamReader = null) {
         var number = pull["number"]!.GetValue<int>();
         var head = pull["head"]!["sha"]!.GetValue<string>();
         var baseBranch = pull["base"]!["ref"]!.GetValue<string>();
@@ -114,6 +116,16 @@ public static class PrGateCommand
             summaries[artifact] = await api.TryGetArtifactSummaryAsync(org, repo, artifact, ct, headSha: head);
         if (policy.CoverageNoRegression && !summaries.ContainsKey("coverage-summary"))
             summaries["coverage-summary"] = await api.TryGetArtifactSummaryAsync(org, repo, "coverage-summary", ct, headSha: head);
+
+        IReadOnlyList<string>? maintainers = null;
+        string? teamError = null;
+        if (!string.IsNullOrWhiteSpace(policy.MaintainersTeam)) {
+            maintainers = await (teamReader ?? api).ListTeamMembersAsync(org, policy.MaintainersTeam, ct);
+            if (maintainers is null) {
+                teamError = $"cannot read the members of @{org}/{policy.MaintainersTeam}; the team must exist and the gate App needs the Members: Read-only organization permission";
+                maintainers = [];
+            }
+        }
 
         return new PullRequestSnapshot {
             Number = number,
@@ -134,7 +146,8 @@ public static class PrGateCommand
             CheckConclusions = await api.GetCheckConclusionsAsync(org, repo, head, ct),
             Summaries = summaries,
             BaseCoverage = policy.CoverageNoRegression ? await api.TryGetArtifactSummaryAsync(org, repo, "coverage-summary", ct, branch: baseBranch) : null,
-            HumanApprovers = MergeGate.HumanApprovers(await api.ListPullRequestReviewsAsync(org, repo, number, ct), author, head)
+            HumanApprovers = MergeGate.HumanApprovers(await api.ListPullRequestReviewsAsync(org, repo, number, ct), author, head, maintainers),
+            MaintainersTeamError = teamError
         };
     }
 }
