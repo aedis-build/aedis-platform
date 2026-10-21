@@ -2,6 +2,8 @@
 schema: aedis.platform/merge-policy/v1
 # Bots entre aspas: os colchetes de "[bot]" quebram a lista em YAML.
 trustedAuthors: [jeffersonnlucas, "aedis-agent-coder[bot]"]
+# Só membros deste time contam como a revisão humana que os caminhos abaixo exigem (lido pela App do portão).
+maintainersTeam: maintainers
 humanRequiredPaths:
   - ".github/**"
   - CODEOWNERS
