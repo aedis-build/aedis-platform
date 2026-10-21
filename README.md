@@ -75,6 +75,20 @@ A App precisa estar instalada na organização com `pull_requests: write`, `cont
 avalia e comenta. O `GITHUB_TOKEN` nunca aprova (ORG-02). No L3 a revisão de code owner continua humana: a App
 não é code owner, de propósito.
 
+**Revisão humana como segunda aprovação.** Quando a PR toca caminho reservado a humano ou traz breaking change, o
+portão espera um mantenedor (usuário, não bot, com associação OWNER, MEMBER ou COLLABORATOR, diferente do autor)
+aprovar o commit atual. Com essa aprovação, confere os demais critérios e aprova como a App: são as duas aprovações
+que o ruleset L3 exige. O `review-signal.yml` dispara o portão de novo a cada aprovação, sem permissão nenhuma; o
+`gate.yml` escuta o fim dele por `workflow_run`, que sempre roda a versão de `main`.
+
+## Identidade dos agentes (`aedis agent token`)
+
+Cada agente de código tem a sua GitHub App (por exemplo `Aedis Agent Coder`), com permissão só de conteúdo, PRs,
+issues e workflows, e nunca de administração. `aedis agent token --org <org> --app-id <id> --key <arquivo.pem>`
+imprime um token de instalação válido por uma hora, usado no `git` e no `gh`. O agente passa a ser o autor das PRs e
+o mantenedor, o revisor: com o Aedis Compliance, isso fecha as duas aprovações sem bypass de administrador. Bots vão
+entre aspas em `trustedAuthors` (`"aedis-agent-coder[bot]"`), porque os colchetes quebram a lista em YAML.
+
 ## Licença
 
 Apache-2.0. Veja [LICENSE](LICENSE) e [SECURITY.md](SECURITY.md).

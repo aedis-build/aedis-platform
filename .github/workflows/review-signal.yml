@@ -1,0 +1,17 @@
+# Sinal de revisão: quando alguém aprova uma PR, este workflow só termina, sem permissão nenhuma e sem tocar o
+# código. O gate.yml escuta o fim dele (workflow_run, sempre na versão de main) e reavalia a PR com a aprovação
+# humana. Um pull_request_review roda com a definição da PR, por isso nunca aprova nada por conta própria.
+name: review-signal
+
+on:
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  signal:
+    if: github.event.review.state == 'approved'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "approval submitted"

@@ -1,6 +1,7 @@
 # Política do portão de merge (lida sempre do branch padrão). O que não está aqui exige um humano.
 schema: aedis.platform/merge-policy/v1
-trustedAuthors: [jeffersonnlucas]
+# Bots entre aspas: os colchetes de "[bot]" quebram a lista em YAML.
+trustedAuthors: [jeffersonnlucas, "aedis-agent-coder[bot]"]
 humanRequiredPaths:
   - ".github/**"
   - CODEOWNERS

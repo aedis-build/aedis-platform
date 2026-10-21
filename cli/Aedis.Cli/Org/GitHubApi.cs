@@ -173,6 +173,10 @@ public sealed class GitHubApi
         return array.OfType<JsonObject>().Select(c => c["commit"]?["message"]?.GetValue<string>() ?? "").ToList();
     }
 
+    /// <summary>Revisões da PR, na ordem em que foram enviadas.</summary>
+    public async Task<JsonArray> ListPullRequestReviewsAsync(string org, string repo, int number, CancellationToken ct) =>
+        await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/pulls/{number}/reviews?per_page=100", ct) ?? [];
+
     /// <summary>Nome do check → conclusão no commit (nula enquanto não concluiu); fica a execução mais recente de cada nome.</summary>
     public async Task<IReadOnlyDictionary<string, string?>> GetCheckConclusionsAsync(string org, string repo, string sha, CancellationToken ct) {
         var runs = await GetJsonAsync<JsonObject>($"https://api.github.com/repos/{org}/{repo}/commits/{sha}/check-runs?per_page=100", ct);
