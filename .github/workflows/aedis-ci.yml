@@ -197,7 +197,9 @@ jobs:
         run: |
           set -euo pipefail
           bash -c "$DAST_START"
-          curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
+          # --retry-all-errors: o Docker aceita a conexão antes de a app escutar e a derruba (curl 56), o que
+          # --retry-connrefused não repete.
+          curl --retry 30 --retry-all-errors --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
       - uses: aedis-build/aedis-platform/.github/actions/dast@6b5a4b798354c39f620091ebde885fb0a696978b # main
         with:
           target-url: http://localhost:8080/
