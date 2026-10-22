@@ -79,6 +79,46 @@ injeta as variáveis do framework Aedis (`ASPNETCORE_*`, `Security__*`), as prob
 (um caminho explícito diferente é respeitado, inclusive nos healthchecks do ALB, AGIC e Kong) e não há segredos
 de banco ou fila. `aedis platform new-app portal --type site` gera o `app.yaml` acima sem bloco `secrets`.
 
+## 3b. Site estático na Cloudflare: `deploy-static.yml`
+
+Um site sem servidor (Next.js com `output: "export"`) pode ir para a Cloudflare em vez do cluster. Os cabeçalhos de
+segurança saem de um `_headers` gerado no build (CSP com hashes dos scripts inline, já que não há nonce por
+requisição) e servido pelo runtime da Cloudflare. O CI continua o mesmo `aedis-ci.yml`; o deploy é outro
+reutilizável:
+
+```yaml
+# .github/workflows/deploy.yml
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+permissions: {}
+jobs:
+  deploy:
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-static.yml@<sha de main>
+    permissions: { contents: read, id-token: write, attestations: write }
+    with:
+      name: meu-site
+      url: https://meu-site.example
+```
+
+O workflow constrói o site uma vez, empacota, gera o SBOM (SPDX) e atesta o pacote. Como o build roda num workflow
+reutilizável da plataforma, isolado do repositório, a atestação atende **SLSA Build L3**. O job de deploy declara o
+environment (`prd` por padrão), verifica a atestação exigindo que ela tenha saído do `deploy-static.yml` e publica
+exatamente aqueles bytes com o `wrangler` do lockfile do site.
+
+| No repositório do site | Para quê |
+|---|---|
+| `wrangler.jsonc` | Worker de assets estáticos apontando para `out/`, rotas do domínio |
+| environment `prd` | `CLOUDFLARE_API_TOKEN` (Workers Editor + rotas) e `CLOUDFLARE_ACCOUNT_ID`; só `main`, aprovador obrigatório, sem bypass de admin |
+| `wrangler` em `devDependencies` | versão exata, atualizada pelo Dependabot com cooldown |
+
+Para conferir o que está no ar:
+
+```bash
+gh attestation verify meu-site.tgz -R <org>/<repo> --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-static.yml
+```
+
 ## 4. O que L3 significa para um site
 
 | Exigência | Como o site a cumpre |
