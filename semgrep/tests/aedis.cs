@@ -97,4 +97,61 @@ public class Repo
         // ok: aedis.cors-any-origin-with-credentials
         b.WithOrigins("https://app.example.com").AllowCredentials();
     }
+
+    public IActionResult Redirects(string returnUrl, HttpContext ctx)
+    {
+        // ruleid: aedis.open-redirect
+        ctx.Response.Redirect(returnUrl);
+        // ok: aedis.open-redirect
+        ctx.Response.Redirect("/home");
+        if (Url.IsLocalUrl(returnUrl))
+        {
+            // ok: aedis.open-redirect
+            return Redirect(returnUrl);
+        }
+        // ok: aedis.open-redirect
+        return LocalRedirect(returnUrl);
+    }
+
+    public IActionResult RedirectAway(string next)
+    {
+        // ruleid: aedis.open-redirect
+        return Redirect(next);
+    }
+
+    public void Cookies(HttpResponse r)
+    {
+        // ruleid: aedis.cookie-missing-flags
+        r.Cookies.Append("sid", "v", new CookieOptions { HttpOnly = true });
+        // ruleid: aedis.cookie-missing-flags
+        var plain = new CookieOptions();
+        // ok: aedis.cookie-missing-flags
+        r.Cookies.Append("sid", "v", new CookieOptions { Secure = true, HttpOnly = true, SameSite = SameSiteMode.Strict });
+        // ok: aedis.cookie-missing-flags
+        var lax = new CookieOptions { SameSite = SameSiteMode.Lax, HttpOnly = true, Secure = true, Path = "/" };
+    }
+
+    public void Jwt(JwtBearerOptions o)
+    {
+        o.TokenValidationParameters = new TokenValidationParameters
+        {
+            // ruleid: aedis.jwt-validation-disabled
+            ValidateAudience = false,
+            // ruleid: aedis.jwt-validation-disabled
+            RequireSignedTokens = false,
+            // ok: aedis.jwt-validation-disabled
+            ValidateIssuer = true,
+        };
+    }
+
+    public void ErrorPages(WebApplication app, IWebHostEnvironment env)
+    {
+        // ruleid: aedis.developer-exception-page
+        app.UseDeveloperExceptionPage();
+        if (env.IsDevelopment())
+        {
+            // ok: aedis.developer-exception-page
+            app.UseDeveloperExceptionPage();
+        }
+    }
 }

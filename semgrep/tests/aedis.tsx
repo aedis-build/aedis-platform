@@ -27,3 +27,13 @@ export function fixtures(html: string, token: string) {
   const markdown = <ReactMarkdown rehypePlugins={[rehypeRaw]}>{html}</ReactMarkdown>;
   return [markup, notes, name, bounded, markdown];
 }
+
+export function dynamicCode(input: string) {
+  // ruleid: aedis.eval
+  eval(input);
+  // ruleid: aedis.eval
+  const fn = new Function("a", input);
+  // ok: aedis.eval
+  const data = JSON.parse(input);
+  return [fn, data];
+}
