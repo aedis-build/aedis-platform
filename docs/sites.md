@@ -100,7 +100,12 @@ jobs:
     with:
       name: meu-site
       url: https://meu-site.example
+    secrets: inherit
 ```
+
+O `secrets: inherit` é obrigatório: um workflow reutilizável só recebe os segredos que o caller repassa, mesmo
+num job que declara o environment. As regras do `prd` (só `main`, aprovador obrigatório) continuam valendo para o
+job que lê os segredos.
 
 O workflow constrói o site uma vez, empacota, gera o SBOM (SPDX) e atesta o pacote. Como o build roda num workflow
 reutilizável da plataforma, isolado do repositório, a atestação atende **SLSA Build L3**. O job de deploy declara o
