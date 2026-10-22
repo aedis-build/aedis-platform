@@ -7,8 +7,9 @@
 #   gh attestation verify <name>.tgz -R <org>/<repo> --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-static.yml
 #
 # Segredos: CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID ficam no environment do repositório que chama (padrão
-# `prd`, protegido: só main e aprovador obrigatório). O job declara o environment, então os segredos não passam pelo
-# caller. A Cloudflare não aceita OIDC do GitHub; o token tem só Workers Editor e as rotas do domínio, e expira.
+# `prd`, protegido: só main e aprovador obrigatório). O caller precisa passar `secrets: inherit`: um reutilizável só
+# recebe os segredos que o caller repassa, mesmo num job que declara o environment. A Cloudflare não aceita OIDC do
+# GitHub; o token tem só Workers Editor e as rotas do domínio, e expira.
 #
 # Permissões que o caller concede: contents: read, id-token: write, attestations: write.
 name: deploy-static
