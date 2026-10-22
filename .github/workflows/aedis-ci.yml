@@ -164,7 +164,7 @@ jobs:
         with:
           name: coverage-summary
           path: coverage-summary
-      - uses: codecov/codecov-action@2320916714171c258d01dbd81040d64d798c6f8e # v7.1.1
+      - uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
         with:
           use_oidc: true
           files: ${{ inputs.language == 'node' && format('coverage-summary/{0}', inputs.coverage-reports) || 'coverage-summary/coverage/Cobertura.xml' }}
@@ -193,12 +193,12 @@ jobs:
         if: inputs.language == 'dotnet'
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
-      - uses: github/codeql-action/init@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: ${{ inputs.language == 'node' && 'javascript-typescript' || 'csharp' }}
           build-mode: ${{ inputs.language == 'node' && 'none' || 'autobuild' }}
           queries: ${{ inputs.codeql-queries }}
-      - uses: github/codeql-action/analyze@24c54180a607b1449ed407dd24f251e4e9147c8d # v4.38.3
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
 
   reuse:
     name: REUSE
