@@ -163,3 +163,57 @@ rules:
       exclude:
         - "**/registry/aedis/ui/input.tsx"
         - "**/registry/aedis/ui/textarea.tsx"
+
+  - id: aedis.open-redirect
+    languages: [csharp]
+    severity: ERROR
+    message: "Redirecionamento para URL que não é literal: com entrada externa vira open redirect (phishing com o domínio da app). Use LocalRedirect, confira Url.IsLocalUrl ou redirecione só para destinos de uma lista."
+    metadata: { category: security, cwe: "CWE-601", owasp: "A01:2021", aedis-control: PLT-13 }
+    patterns:
+      - pattern-either:
+          - pattern: Redirect($URL)
+          - pattern: RedirectPermanent($URL)
+          - pattern: $RESP.Redirect($URL, ...)
+          - pattern: Results.Redirect($URL, ...)
+          - pattern: TypedResults.Redirect($URL, ...)
+      - pattern-not: Redirect("...")
+      - pattern-not: RedirectPermanent("...")
+      - pattern-not: $RESP.Redirect("...", ...)
+      - pattern-not: Results.Redirect("...", ...)
+      - pattern-not: TypedResults.Redirect("...", ...)
+      - pattern-not-inside: |
+          if (<... Url.IsLocalUrl($URL) ...>) { ... }
+
+  - id: aedis.cookie-missing-flags
+    languages: [csharp]
+    severity: ERROR
+    message: "CookieOptions sem Secure = true, HttpOnly = true e SameSite Strict ou Lax: o cookie trafega em HTTP, fica legível por script ou acompanha requisições de outros sites (CSRF). Defina os três."
+    metadata: { category: security, cwe: "CWE-614", owasp: "A05:2021", aedis-control: PLT-13 }
+    pattern-regex: '(?m)^(?!\s*//).*new\s+CookieOptions\s*(?:\(\s*\))?\s*(?:\{(?:(?![^}]*\bSecure\s*=\s*true)|(?![^}]*\bHttpOnly\s*=\s*true)|(?![^}]*\bSameSite\s*=\s*SameSiteMode\.(?:Strict|Lax)\b))[^}]*\}|(?!\s*\{))'
+
+  - id: aedis.jwt-validation-disabled
+    languages: [csharp]
+    severity: ERROR
+    message: "Validação de JWT desligada ($0): um token de outro emissor, de outra audiência, expirado ou sem assinatura passa a valer. O AedisApiHost já configura a validação; não sobrescreva."
+    metadata: { category: security, cwe: "CWE-347", owasp: "A07:2021", aedis-control: PLT-13 }
+    pattern-regex: '(?m)^(?!\s*//).*\b(?:ValidateIssuer|ValidateAudience|ValidateLifetime|ValidateIssuerSigningKey|RequireSignedTokens|RequireExpirationTime)\s*=\s*false\b'
+
+  - id: aedis.developer-exception-page
+    languages: [csharp]
+    severity: ERROR
+    message: "UseDeveloperExceptionPage fora de um if de Development: em produção a resposta de erro leva stack trace e detalhes internos. O AedisApiHost responde ProblemDetails sem vazar nada."
+    metadata: { category: security, cwe: "CWE-209", owasp: "A05:2021", aedis-control: PLT-13 }
+    patterns:
+      - pattern: $APP.UseDeveloperExceptionPage(...)
+      - pattern-not-inside: |
+          if (<... $E.IsDevelopment() ...>) { ... }
+
+  - id: aedis.eval
+    languages: [typescript, javascript]
+    severity: ERROR
+    message: "eval or new Function runs a string as code: any untrusted part becomes script execution, and the strict CSP of Aedis UI blocks it anyway. Parse data with JSON.parse and keep code static."
+    metadata: { category: security, cwe: "CWE-95", owasp: "A03:2021", aedis-control: PLT-13 }
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: Function(...)
