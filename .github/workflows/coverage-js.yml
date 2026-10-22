@@ -1,7 +1,9 @@
 # Workflow reutilizável: testes JavaScript/TypeScript com cobertura (vitest/jest com reporter Cobertura) e o mesmo
 # gate de limiar/regressão do coverage.yml (.NET). O repositório só precisa de um script pnpm que escreva o XML
 # Cobertura; o scripts/coverage-gate.py do aedis-platform lê o XML e produz coverage-summary.json
-# (aedis.platform/coverage-summary/v1), publicado com o XML como artefato coverage-summary.
+# (aedis.platform/coverage-summary/v1), publicado com o XML como artefato coverage-summary. Como o coverage.yml,
+# publica deps-summary.json (aedis.platform/deps-summary/v1) a partir do `pnpm audit` (High/Critical não aceita em
+# deps-accept.yaml falha o job).
 name: coverage-js
 
 on:
@@ -73,6 +75,22 @@ jobs:
           SCRIPT: ${{ inputs.script }}
         run: pnpm run "$SCRIPT"
 
+      - name: Vulnerabilidades conhecidas das dependências
+        id: deps
+        run: |
+          set -euo pipefail
+          # pnpm audit sai com código != 0 quando acha vulnerabilidade; o gate é do deps-summary.py.
+          pnpm audit --json > deps.json || true
+          script=scripts/deps-summary.py; [ -f "$script" ] || script=.aedis-platform/scripts/deps-summary.py
+          accept=""; [ -f deps-accept.yaml ] && accept="--accept deps-accept.yaml"
+          python3 "$script" --input deps.json $accept --out deps-summary.json || echo "deps=fail" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: deps-summary
+          path: deps-summary.json
+          if-no-files-found: ignore
+
       - name: Baseline do branch principal (sumário anterior)
         if: github.event_name == 'pull_request' && inputs.no-regression
         continue-on-error: true
@@ -91,6 +109,7 @@ jobs:
           REPORTS: ${{ inputs.reports }}
           MIN_LINE: ${{ inputs.min-line }}
           MIN_BRANCH: ${{ inputs.min-branch }}
+          DEPS: ${{ steps.deps.outputs.deps }}
         run: |
           set -euo pipefail
           script=scripts/coverage-gate.py; [ -f "$script" ] || script=.aedis-platform/scripts/coverage-gate.py
@@ -100,6 +119,7 @@ jobs:
           else
             echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
           fi
+          [ "$DEPS" != "fail" ] || { echo "::error::dependências com vulnerabilidade High/Critical não aceita (deps-summary.json)"; exit 1; }
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
