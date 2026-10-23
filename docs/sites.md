@@ -172,3 +172,33 @@ aplica juntas.
 
 A sessão fica em cookie `HttpOnly` emitido pelo backend; o site chama o backend só na mesma origem (`api()` do
 Aedis UI). Por isso o site não tem segredos no cofre.
+
+## 5. Release de um registry: `release-registry-js.yml`
+
+Um repositório que publica um registry shadcn (JSON em `/r/<name>.json`, como o aedis-ui) faz a release por este
+reutilizável, em tag `vX.Y.Z`. O build roda na plataforma, isolado do chamador, e a atestação sai em SLSA Build L3;
+o job de publicação verifica a atestação antes de anexar à GitHub Release o pacote `<name>-<tag>.tgz`, o bundle
+Sigstore `<name>-<tag>.tgz.sigstore` (o `@aedis/cli` o verifica antes de escrever qualquer arquivo) e o SBOM. A tag
+precisa ser a `version` do `package.json` indicado em `version-file`.
+
+```yaml
+# .github/workflows/release.yml
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+permissions: {}
+jobs:
+  release:
+    uses: aedis-build/aedis-platform/.github/workflows/release-registry-js.yml@<sha de main>
+    permissions: { contents: write, id-token: write, attestations: write }
+    with:
+      name: meu-registry
+      registry-dir: apps/www/public/r
+```
+
+Quem instala confere o que recebeu:
+
+```bash
+gh attestation verify meu-registry-v1.0.0.tgz -R minha-org/meu-registry   --signer-workflow aedis-build/aedis-platform/.github/workflows/release-registry-js.yml
+```
+
