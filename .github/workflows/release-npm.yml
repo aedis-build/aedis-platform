@@ -24,11 +24,11 @@ on:
         type: string
         default: ""
       check-scripts:
-        description: Scripts pnpm rodados em sequência no diretório do pacote antes do build, separados por espaço
+        description: Scripts pnpm rodados em sequência no diretório do pacote antes do build, separados por espaço; vazio para nenhum
         type: string
         default: typecheck test:coverage
       build-script:
-        description: Script pnpm que gera o que o campo files do package.json publica
+        description: Script pnpm que gera o que o campo files do package.json publica; vazio para um pacote sem build
         type: string
         default: build
       node-version:
@@ -85,6 +85,7 @@ jobs:
             echo "::endgroup::"
           done
       - name: Build
+        if: inputs.build-script != ''
         env:
           SCRIPT: ${{ inputs.build-script }}
         run: pnpm -C "$DIR" run "$SCRIPT"
