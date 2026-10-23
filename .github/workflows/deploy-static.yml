@@ -12,6 +12,9 @@
 # GitHub; o token tem só Workers Editor e as rotas do domínio, e expira.
 #
 # Permissões que o caller concede: contents: read, id-token: write, attestations: write.
+#
+# DAST: no aedis-ci, com `dast-start` servindo o build pelo `wrangler dev` (docs/sites.md). Contra a URL publicada,
+# a Cloudflare responde aos runners com o desafio de bot, e o ZAP avalia essa página, não o site.
 name: deploy-static
 
 on:

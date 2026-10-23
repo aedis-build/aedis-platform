@@ -41,6 +41,13 @@ jobs:
       dast-start: "pnpm build && pnpm start > site.log 2>&1 &"
 ```
 
+O caller do template também limita o CI a uma execução por pull request. O `concurrency` fica no nível do
+workflow, agrupado pelo número do PR, e o gatilho `pull_request` inclui `closed`. Assim, um push novo ou o merge
+do PR cancelam a execução que estava rodando, e numa pilha de PRs as execuções obsoletas não ficam na fila. O job
+tem `if: github.event.action != 'closed'`, então a execução do fechamento só cancela e termina. Push na `main` e o
+agendamento usam `run_id` como grupo e nunca são cancelados: a comparação de cobertura com o último run verde
+depende deles.
+
 Com `language: node` o pipeline troca só o que é da linguagem: a cobertura roda pelo `coverage-js.yml`
 (`pnpm install --frozen-lockfile`, o script `test:coverage` do repositório, o mesmo `scripts/coverage-gate.py` e o
 mesmo `coverage-summary.json` do .NET), o CodeQL analisa `javascript-typescript` sem build e o SAST soma
@@ -123,6 +130,24 @@ Para conferir o que está no ar:
 ```bash
 gh attestation verify meu-site.tgz -R <org>/<repo> --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-static.yml
 ```
+
+### DAST do site estático: `wrangler dev` no CI, não contra o site no ar
+
+O DAST roda no `aedis-ci.yml`, com o `wrangler dev` do lockfile servindo o build. O runtime local aplica o mesmo
+`_headers`, então o ZAP vê os cabeçalhos reais. O modo local não pede login nem segredo, e a rota `custom_domain`
+do `wrangler.jsonc` não atrapalha:
+
+```yaml
+      dast-start: "pnpm build && (WRANGLER_SEND_METRICS=false pnpm exec wrangler dev --ip 127.0.0.1 --port 8080 > dast-server.log 2>&1 &)"
+```
+
+Não rode o DAST contra a URL publicada, depois do deploy. A partir dos runners do GitHub, a Cloudflare responde com
+a página de desafio de bot, e o ZAP avalia a CSP dessa página, não a do site. Isso aconteceu no aedis-ui em
+2026-10-22 ([#60](https://github.com/aedis-build/aedis-platform/issues/60)).
+
+No `_headers`, cada caminho recebe no máximo uma CSP. Não use `/*` com uma CSP e `! Content-Security-Policy` nas
+regras de página: em produção a Cloudflare não aplicou o detach na raiz `/` e enviou duas políticas, que o navegador
+aplica juntas.
 
 ## 4. O que L3 significa para um site
 
