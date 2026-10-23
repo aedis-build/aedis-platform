@@ -58,6 +58,16 @@ separado porque precisa de permissões de escrita que o CI de toda PR não deve 
 `dast-start` é opcional e vale para .NET também: é o comando que constrói e serve a app em `http://localhost:8080`.
 Com ele, o job `dast` instala a toolchain da linguagem, roda o comando, espera a porta responder e chama a action
 `.github/actions/dast` (ZAP baseline) contra `http://localhost:8080/`, com os aceites de `dast-accept.yaml`.
+Um aceite pode se limitar a caminhos (`paths`), para um falso positivo numa URL não esconder o mesmo alerta no resto
+do site:
+
+```yaml
+accept:
+  - pluginId: 90003
+    until: 2027-01-20
+    reason: llms-full.txt é text/plain; o ZAP lê o código de exemplo como HTML
+    paths: [/llms-full.txt]
+```
 
 ## 3. Deploy: `type: site` no chart
 
