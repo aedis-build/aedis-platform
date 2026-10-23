@@ -41,6 +41,13 @@ jobs:
       dast-start: "pnpm build && pnpm start > site.log 2>&1 &"
 ```
 
+O caller do template também limita o CI a uma execução por pull request. O `concurrency` fica no nível do
+workflow, agrupado pelo número do PR, e o gatilho `pull_request` inclui `closed`. Assim, um push novo ou o merge
+do PR cancelam a execução que estava rodando, e numa pilha de PRs as execuções obsoletas não ficam na fila. O job
+tem `if: github.event.action != 'closed'`, então a execução do fechamento só cancela e termina. Push na `main` e o
+agendamento usam `run_id` como grupo e nunca são cancelados: a comparação de cobertura com o último run verde
+depende deles.
+
 Com `language: node` o pipeline troca só o que é da linguagem: a cobertura roda pelo `coverage-js.yml`
 (`pnpm install --frozen-lockfile`, o script `test:coverage` do repositório, o mesmo `scripts/coverage-gate.py` e o
 mesmo `coverage-summary.json` do .NET), o CodeQL analisa `javascript-typescript` sem build e o SAST soma
