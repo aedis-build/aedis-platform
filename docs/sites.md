@@ -229,3 +229,37 @@ workflow **chamador** (`cli-release.yml` no exemplo: o npm valida o workflow que
 reutilizável) e o environment (`npm` por padrão); em *Publishing access*, exija 2FA e não permita tokens. Confirme na
 primeira publicação que a página do pacote mostra a proveniência.
 
+## 7. Regressão visual: `visual-regression.yml`
+
+Um site com baselines de screenshot (Playwright `toHaveScreenshot`) compara cada pull request com elas por este
+reutilizável, na imagem oficial do Playwright pinada por digest, para que fontes e navegador sejam os mesmos em toda
+execução. O modo `update` regenera as baselines e as sobe como artefato `visual-baselines`: o autor as commita e um
+mantenedor olha o que mudou, porque uma baseline regenerada só prova que nada mudou desde que foi tirada.
+
+```yaml
+# .github/workflows/visual.yml
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+permissions: {}
+jobs:
+  compare:
+    if: github.event.action != 'labeled'
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    permissions: { contents: read }
+    with:
+      working-directory: apps/www
+  baselines:
+    if: github.event.action == 'labeled' && github.event.label.name == 'update-visual-baselines'
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    permissions: { contents: read }
+    with:
+      working-directory: apps/www
+      mode: update
+```
+
+A versão da imagem (`playwright-image`) acompanha a do `@playwright/test` no lockfile: quando uma sobe, a outra sobe
+no mesmo commit, e as baselines são regeneradas.
+
