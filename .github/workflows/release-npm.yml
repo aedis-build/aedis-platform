@@ -9,7 +9,11 @@
 # environment usado aqui. Confirme na primeira publicação: a página do pacote deve mostrar a proveniência apontando
 # para o repositório e o commit da tag. Nas configurações do pacote, exija 2FA e não permita tokens.
 #
-# Permissões que o caller concede: contents: read, id-token: write.
+# O tarball é empacotado uma vez: o mesmo arquivo é publicado no npm, atestado (proveniência do GitHub) e subido
+# como artefato `npm-<pacote>` com o bundle Sigstore ao lado, para o caller anexar à GitHub Release e quem não tem
+# npm instalar offline exatamente os bytes que o npm recebeu (`gh attestation verify <tgz> --owner <org>`).
+#
+# Permissões que o caller concede: contents: read, id-token: write, attestations: write.
 name: release-npm
 
 on:
@@ -53,9 +57,11 @@ jobs:
     permissions:
       contents: read
       id-token: write
+      attestations: write
     env:
       TAG: ${{ github.ref_name }}
       DIR: ${{ inputs.package-dir }}
+      PACK: ${{ runner.temp }}/npm-pack
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -95,8 +101,46 @@ jobs:
           path: ${{ inputs.package-dir }}
           format: spdx-json
           artifact-name: npm-sbom.spdx.json
+      - name: Empacotar uma vez (o arquivo que o npm recebe é o que vai para a release)
+        id: pack
+        env:
+          NPM: ${{ inputs.npm-version }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$PACK"
+          npx --yes "npm@$NPM" pack --json --pack-destination "$PACK" > "$PACK/pack.json"
+          file="$(node -p "require('$PACK/pack.json')[0].filename")"
+          integrity="$(node -p "require('$PACK/pack.json')[0].integrity")"
+          # npm names a scoped tarball like the unscoped one (@aedis/cli and aedis-cli both give aedis-cli-x.tgz): as an
+          # asset, the scope stays, with / as __ (aedis__cli-x.tgz). The bytes are the same; only the file name differs.
+          name="$(node -p "require('./package.json').name")"
+          if [ "$name" != "${name#@}" ]; then asset="${name#@}"; asset="${asset//\//__}-$(node -p "require('./package.json').version").tgz"; mv "$PACK/$file" "$PACK/$asset"; file="$asset"; fi
+          echo "$integrity" > "$PACK/$file.integrity"
+          echo "tarball=$PACK/$file" >> "$GITHUB_OUTPUT"
+          echo "artifact=npm-${file%.tgz}" >> "$GITHUB_OUTPUT"
+          echo "$file $integrity"
+        working-directory: ${{ inputs.package-dir }}
       - name: Publicar com proveniência (Trusted Publishing, OIDC)
         env:
           NPM: ${{ inputs.npm-version }}
-        run: npx --yes "npm@$NPM" publish --provenance --access public
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: npx --yes "npm@$NPM" publish "$TARBALL" --provenance --access public
         working-directory: ${{ inputs.package-dir }}
+      - name: Atestar o tarball publicado
+        id: attest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ steps.pack.outputs.tarball }}
+      - name: Bundle Sigstore ao lado do tarball
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: cp "$BUNDLE" "$TARBALL.sigstore"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.pack.outputs.artifact }}
+          path: |
+            ${{ steps.pack.outputs.tarball }}
+            ${{ steps.pack.outputs.tarball }}.sigstore
+            ${{ steps.pack.outputs.tarball }}.integrity
+          if-no-files-found: error
