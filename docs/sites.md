@@ -202,3 +202,64 @@ Quem instala confere o que recebeu:
 gh attestation verify meu-registry-v1.0.0.tgz -R minha-org/meu-registry   --signer-workflow aedis-build/aedis-platform/.github/workflows/release-registry-js.yml
 ```
 
+## 6. Publicação de um pacote npm: `release-npm.yml`
+
+Um pacote npm do Aedis (o `@aedis/cli`, por exemplo) é publicado por este reutilizável em tag `<prefixo>vX.Y.Z`:
+a tag é conferida contra a `version` do `package.json`, os scripts de verificação e o build rodam no diretório do
+pacote, o SBOM é gerado e `npm publish --provenance` publica por Trusted Publishing (OIDC). Nenhum `NPM_TOKEN` existe
+em lugar nenhum; o npm mostra na página do pacote o repositório, o workflow e o commit que o publicaram.
+
+```yaml
+# .github/workflows/cli-release.yml
+on:
+  push:
+    tags: ["cli-v[0-9]+.[0-9]+.[0-9]+"]
+permissions: {}
+jobs:
+  publish:
+    uses: aedis-build/aedis-platform/.github/workflows/release-npm.yml@<sha de main>
+    permissions: { contents: read, id-token: write }
+    with:
+      package-dir: packages/cli
+      tag-prefix: cli-
+```
+
+No npmjs.com, uma vez por pacote: em *Trusted Publisher*, registre o repositório chamador, o nome do arquivo do
+workflow **chamador** (`cli-release.yml` no exemplo: o npm valida o workflow que iniciou a execução, não o
+reutilizável) e o environment (`npm` por padrão); em *Publishing access*, exija 2FA e não permita tokens. Confirme na
+primeira publicação que a página do pacote mostra a proveniência.
+
+## 7. Regressão visual: `visual-regression.yml`
+
+Um site com baselines de screenshot (Playwright `toHaveScreenshot`) compara cada pull request com elas por este
+reutilizável, na imagem oficial do Playwright pinada por digest, para que fontes e navegador sejam os mesmos em toda
+execução. O modo `update` regenera as baselines e as sobe como artefato `visual-baselines`: o autor as commita e um
+mantenedor olha o que mudou, porque uma baseline regenerada só prova que nada mudou desde que foi tirada.
+
+```yaml
+# .github/workflows/visual.yml
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+permissions: {}
+jobs:
+  compare:
+    if: github.event.action != 'labeled'
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    permissions: { contents: read }
+    with:
+      working-directory: apps/www
+  baselines:
+    if: github.event.action == 'labeled' && github.event.label.name == 'update-visual-baselines'
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    permissions: { contents: read }
+    with:
+      working-directory: apps/www
+      mode: update
+```
+
+A versão da imagem (`playwright-image`) acompanha a do `@playwright/test` no lockfile: quando uma sobe, a outra sobe
+no mesmo commit, e as baselines são regeneradas.
+

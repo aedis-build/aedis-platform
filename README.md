@@ -16,7 +16,7 @@ cobertura de código) em três níveis.
 | `template/tenant` | Esqueleto do repositório GitOps do cliente (`platform/values`, `apps/`, ApplicationSet, workflows) |
 | `template/site` | Site Next.js com Aedis UI (`aedis platform new-site`): Dockerfile distroless, `proxy.ts` com os cabeçalhos de segurança, CI do `aedis-ci` com `language: node` e `release.yml` da imagem, `type: site` no chart |
 | `scripts/` | `validate-apps.sh` (render + schema + kubeconform + sumário JSON), `render-tenant-template.sh` |
-| `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-static`, `release-registry-js`; em seguida `promote`) |
+| `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-static`, `release-registry-js`, `release-npm`, `visual-regression`; em seguida `promote`) |
 | `.github/actions/dast` | Ação composta: ZAP baseline contra a URL alvo, sumário `dast-summary/v1` e gate com aceites de risco com validade |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |
 | `docs/` | Guias por nuvem, referência do chart, controles de segurança e níveis de conformidade |

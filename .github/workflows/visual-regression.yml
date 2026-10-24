@@ -1,0 +1,89 @@
+# Regressão visual com Playwright, chamada pelo repositório de um site. Dois modos: `compare` (pull request e push)
+# constrói o site, roda o script visual contra as baselines versionadas e sobe o relatório quando falha; `update`
+# regenera as baselines e as sobe como artefato para o autor commitar e um mantenedor aprovar (uma baseline
+# regenerada só prova que nada mudou desde que foi tirada, não que está certa). Tudo roda na imagem oficial do
+# Playwright pinada por digest, com a versão da imagem igual à do lockfile: baselines comparam pixels, e fontes e
+# navegador precisam ser os mesmos em toda execução. Se as versões divergirem, o Playwright falha ao não achar o
+# navegador da sua versão, e a imagem é trocada junto com o lockfile.
+#
+# Permissões que o caller concede: contents: read.
+name: visual-regression
+
+on:
+  workflow_call:
+    inputs:
+      mode:
+        description: compare (contra as baselines) ou update (regenera as baselines e as sobe como artefato)
+        type: string
+        default: compare
+      working-directory:
+        description: Pasta do site dentro do repositório (workspace pnpm)
+        type: string
+        default: "."
+      build-script:
+        description: Script pnpm que constrói o site que o script visual serve
+        type: string
+        default: build
+      visual-script:
+        description: Script pnpm que roda o Playwright
+        type: string
+        default: test:visual
+      baselines-dir:
+        description: Pasta das baselines, relativa a working-directory
+        type: string
+        default: visual/__screenshots__
+      playwright-image:
+        description: Imagem oficial do Playwright, pinada por digest, na versão do lockfile
+        type: string
+        default: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+
+permissions: {}
+
+jobs:
+  visual:
+    name: ${{ inputs.mode == 'update' && 'Regenerar as baselines' || 'Comparar com as baselines' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    container:
+      image: ${{ inputs.playwright-image }}
+    env:
+      WD: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # o build pode ler o histórico (lastmod do sitemap)
+      # No container o job roda como root e o checkout pertence ao usuário do runner: sem isto, o git que o build
+      # chama (sitemap, lastmod) recusa o repositório como "dubious ownership" e o build segue sem histórico.
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - run: pnpm install --frozen-lockfile
+      - name: Build
+        env:
+          SCRIPT: ${{ inputs.build-script }}
+        run: pnpm -C "$WD" run "$SCRIPT"
+      - name: Comparar
+        if: inputs.mode != 'update'
+        env:
+          SCRIPT: ${{ inputs.visual-script }}
+        run: pnpm -C "$WD" run "$SCRIPT"
+      - name: Regenerar
+        if: inputs.mode == 'update'
+        env:
+          SCRIPT: ${{ inputs.visual-script }}
+        run: pnpm -C "$WD" run "$SCRIPT" --update-snapshots=all
+      - if: failure() && inputs.mode != 'update'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-report
+          path: |
+            ${{ inputs.working-directory }}/playwright-report
+            ${{ inputs.working-directory }}/test-results
+          retention-days: 7
+      - if: inputs.mode == 'update'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: visual-baselines
+          path: ${{ inputs.working-directory }}/${{ inputs.baselines-dir }}
+          retention-days: 7
