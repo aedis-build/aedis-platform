@@ -111,6 +111,10 @@ jobs:
           npx --yes "npm@$NPM" pack --json --pack-destination "$PACK" > "$PACK/pack.json"
           file="$(node -p "require('$PACK/pack.json')[0].filename")"
           integrity="$(node -p "require('$PACK/pack.json')[0].integrity")"
+          # npm names a scoped tarball like the unscoped one (@aedis/cli and aedis-cli both give aedis-cli-x.tgz): as an
+          # asset, the scope stays, with / as __ (aedis__cli-x.tgz). The bytes are the same; only the file name differs.
+          name="$(node -p "require('./package.json').name")"
+          if [ "$name" != "${name#@}" ]; then asset="${name#@}"; asset="${asset//\//__}-$(node -p "require('./package.json').version").tgz"; mv "$PACK/$file" "$PACK/$asset"; file="$asset"; fi
           echo "$integrity" > "$PACK/$file.integrity"
           echo "tarball=$PACK/$file" >> "$GITHUB_OUTPUT"
           echo "artifact=npm-${file%.tgz}" >> "$GITHUB_OUTPUT"
