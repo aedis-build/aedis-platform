@@ -1,5 +1,6 @@
-# OpenSSF Scorecard: roda neste repo (semanal, push em main e manual) e como workflow reutilizável nos repos
-# do tenant e das apps. Publica SARIF no code scanning e o sumário scorecard-summary.json.
+# OpenSSF Scorecard: roda neste repo (semanal, push em main e manual) e, por workflow_call, nos repos do tenant e das
+# apps (o caller concede contents: read, security-events: write, id-token: write). Publica SARIF no code scanning e o
+# sumário scorecard-summary.json.
 name: scorecard
 
 on:
@@ -8,6 +9,12 @@ on:
   schedule:
     - cron: "17 6 * * 1"
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      publish-results:
+        description: Publicar o resultado na API do Scorecard (badge e histórico públicos); exige repositório público
+        type: boolean
+        default: true
 
 permissions: {}
 
@@ -28,7 +35,9 @@ jobs:
         with:
           results_file: scorecard.sarif
           results_format: sarif
-          publish_results: ${{ github.event_name != 'pull_request' }}
+          publish_results: ${{ inputs.publish-results != false && github.event_name != 'pull_request' }}
+          # A API recusa o que não vem de um workflow dentro das regras dela: melhor um run vermelho que um badge parado.
+          fail_on_publish_error: ${{ inputs.publish-results != false && github.event_name != 'pull_request' }}
 
 
       - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0

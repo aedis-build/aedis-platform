@@ -11,7 +11,7 @@ on:
       platform-ref:
         description: Ref do aedis-platform de onde vêm o chart e os scripts (tag, branch ou SHA)
         type: string
-        default: v1
+        default: ""
       chart:
         description: Chart a usar. Vazio = charts/aedis-app do platform-ref; ou oci://ghcr.io/aedis-build/charts/aedis-app
         type: string
@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref }}
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
           path: .aedis-platform
           persist-credentials: false
 

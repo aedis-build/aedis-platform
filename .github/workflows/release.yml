@@ -1,0 +1,34 @@
+# Release desta plataforma: a cada push em main, a próxima versão vem dos Conventional Commits desde a última tag
+# (release-cut.yml, o mesmo reutilizável que os repositórios chamam) e a tag vX.Y.Z vai direto no commit, sem PR: a
+# versão da plataforma só existe na tag. É essa tag que os callers pinam (`@<sha> # vX.Y.Z`) e que o Dependabot
+# (ecossistema github-actions) acompanha para abrir o repin sozinho. A primeira tag sai de uma execução manual com
+# bump explícito; depois, só o que libera (feat, fix, deps, breaking) gera tag.
+name: release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Incremento (auto = pelos commits desde a última tag; patch/minor/major também cortam a primeira release)"
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions: {}
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  cut:
+    uses: ./.github/workflows/release-cut.yml
+    permissions:
+      contents: read
+    with:
+      bump: ${{ inputs.bump || 'auto' }}
+    secrets:
+      app-id: ${{ secrets.AEDIS_APP_ID }}
+      app-private-key: ${{ secrets.AEDIS_APP_PRIVATE_KEY }}

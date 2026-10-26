@@ -74,7 +74,21 @@ Em produção a imagem é referenciada por digest (`image.digest`), escrito pelo
 aedis platform validate        # helm template + schema + kubeconform + sumário JSON
 ```
 
-O mesmo roda no PR pelo workflow `validate.yml` do tenant (`uses: aedis-build/aedis-platform/.github/workflows/validate.yml@v1`).
+O mesmo roda no PR pelo workflow `validate.yml` do tenant (`uses: aedis-build/aedis-platform/.github/workflows/validate.yml@<sha> # vX.Y.Z`, veja abaixo).
+
+## Pinar os workflows da plataforma
+
+Todo `uses:` de um workflow ou action desta plataforma aponta para o **SHA do commit de uma tag de release**
+`vX.Y.Z`, com a tag no comentário, e nunca para um commit de branch:
+
+```yaml
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # v1.0.0
+```
+
+As tags saem do `release.yml` desta plataforma a cada push em `main` que libera algo (Conventional Commits). Com o
+comentário `# vX.Y.Z`, o Dependabot (`package-ecosystem: github-actions`) abre o pull request de repin a cada release,
+SHA e comentário juntos; um pin em `main` ou numa branch de PR nunca é atualizado e some quando a branch é apagada.
+O input `platform-ref` dos reutilizáveis é opcional: vazio, os scripts vêm do mesmo commit do workflow pinado.
 
 ## 5. O que o chart faz pela aplicação Aedis
 

@@ -11,7 +11,7 @@ on:
       platform-ref:
         description: Ref do aedis-platform de onde vem o script de verificação
         type: string
-        default: v1
+        default: ""
 
 permissions: {}
 
@@ -32,7 +32,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref || 'v1' }}
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
           path: .aedis-platform
           persist-credentials: false
 

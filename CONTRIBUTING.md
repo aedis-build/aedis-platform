@@ -11,7 +11,7 @@
   `feat!:` para breaking). O CI bloqueia o que foge do padrão (`.github/workflows/conventional-commits.yml`); instale o hook
   local com `scripts/install-git-hooks.sh`. É deles que o versionamento semântico (chart, CLI, workflows) é derivado.
 - **Semver em tudo**: tags de imagem (`X.Y.Z`, `X.Y.Z-rc.N`; o schema do chart rejeita outros formatos), versão do chart
-  (`Chart.yaml` = tag `chart-aedis-app-vX.Y.Z`), CLI e workflows (`v1` flutuante + `v1.x.y`).
+  (`Chart.yaml` = tag `chart-aedis-app-vX.Y.Z`), CLI e workflows (tag `vX.Y.Z` por `release.yml`; os callers pinam o SHA da tag, `@<sha> # vX.Y.Z`, nunca um commit de branch).
 
 ## Chart
 

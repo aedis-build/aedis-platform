@@ -31,7 +31,7 @@ Gera um Next.js 16 (App Router, `output: "standalone"`, pnpm) com:
 ```yaml
 jobs:
   aedis:
-    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read, actions: read, packages: read, security-events: write, id-token: write }
     with:
       language: node
@@ -112,7 +112,7 @@ on:
 permissions: {}
 jobs:
   deploy:
-    uses: aedis-build/aedis-platform/.github/workflows/deploy-static.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-static.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read, id-token: write, attestations: write }
     with:
       name: meu-site
@@ -189,7 +189,7 @@ on:
 permissions: {}
 jobs:
   release:
-    uses: aedis-build/aedis-platform/.github/workflows/release-registry-js.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/release-registry-js.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: write, id-token: write, attestations: write }
     with:
       name: meu-registry
@@ -217,7 +217,7 @@ on:
 permissions: {}
 jobs:
   publish:
-    uses: aedis-build/aedis-platform/.github/workflows/release-npm.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/release-npm.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read, id-token: write }
     with:
       package-dir: packages/cli
@@ -263,13 +263,13 @@ permissions: {}
 jobs:
   compare:
     if: github.event.action != 'labeled'
-    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read }
     with:
       working-directory: apps/www
   baselines:
     if: github.event.action == 'labeled' && github.event.label.name == 'update-visual-baselines'
-    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read }
     with:
       working-directory: apps/www
