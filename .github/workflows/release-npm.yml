@@ -110,8 +110,8 @@ jobs:
           set -euo pipefail
           mkdir -p "$PACK"
           npx --yes "npm@$NPM" pack --json --pack-destination "$PACK" > "$PACK/pack.json"
-          file="$(node -p "require('$PACK/pack.json')[0].filename")"
-          integrity="$(node -p "require('$PACK/pack.json')[0].integrity")"
+          # npm <= 11 escreve um array; o npm 12 escreve um objeto indexado pelo nome do pacote.
+          read -r file integrity < <(node -p "const j=require('$PACK/pack.json');const e=Array.isArray(j)?j[0]:Object.values(j)[0];e.filename+' '+e.integrity")
           # npm names a scoped tarball like the unscoped one (@aedis/cli and aedis-cli both give aedis-cli-x.tgz): as an
           # asset, the scope stays, with / as __ (aedis__cli-x.tgz). The bytes are the same; only the file name differs.
           name="$(node -p "require('./package.json').name")"
