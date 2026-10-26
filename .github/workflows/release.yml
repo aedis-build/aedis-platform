@@ -96,7 +96,7 @@ jobs:
           test "$(gh release view "$TAG" --json isImmutable --jq .isImmutable)" = true \
             || { echo "::error::release $TAG is not immutable: enable immutable releases in the repository settings (Settings → General → Releases)"; exit 1; }
           # A atestação é emitida logo depois da publicação; espera-se por ela.
-          for i in $(seq 1 12); do gh release verify "$TAG" && exit 0; sleep 10; done
+          for _ in $(seq 1 12); do gh release verify "$TAG" && exit 0; sleep 10; done
           echo "::error::no valid attestation for release $TAG after two minutes"; exit 1
       # v1 acompanha a última release do major: um atalho para humanos e docs; um `uses:` pina o SHA da tag vX.Y.Z.
       - name: Move the major tag
