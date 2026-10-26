@@ -61,11 +61,12 @@ jobs:
     env:
       TAG: ${{ github.ref_name }}
       DIR: ${{ inputs.package-dir }}
-      PACK: ${{ runner.temp }}/npm-pack
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # O contexto runner não existe no env do job (o workflow nem carrega); o caminho entra pelo GITHUB_ENV.
+      - run: echo "PACK=$RUNNER_TEMP/npm-pack" >> "$GITHUB_ENV"
       - name: A tag é a versão do pacote
         env:
           PREFIX: ${{ inputs.tag-prefix }}
