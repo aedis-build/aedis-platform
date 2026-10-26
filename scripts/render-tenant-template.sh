@@ -3,7 +3,7 @@
 # Equivalente ao `aedis platform init` da CLI, para uso em CI e sem .NET.
 #
 # Uso: render-tenant-template.sh --cloud aws|azure|digitalocean|generic --org <org-github> [--envs dev,prod]
-#      [--platform-ref v1] [--chart oci://ghcr.io/aedis-build/charts/aedis-app] [--chart-version 0.1.0] --out <dir>
+#      [--platform-ref "<sha> # vX.Y.Z"] [--chart oci://ghcr.io/aedis-build/charts/aedis-app] [--chart-version 0.1.0] --out <dir>
 set -euo pipefail
 CLOUD="generic"; ORG=""; ENVS="dev,prod"; REF="v1"; CHART="oci://ghcr.io/aedis-build/charts/aedis-app"; CHART_VERSION="0.1.0"; OUT=""
 while [ $# -gt 0 ]; do
@@ -46,7 +46,7 @@ rm -f "$OUT/platform/values/_env.yaml.tmpl"
 find "$OUT" -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.md' -o -name 'CODEOWNERS' \) -print0 | xargs -0 sed -i \
   -e "s|__AEDIS_CLOUD__|$CLOUD|g" \
   -e "s|__AEDIS_ORG__|$ORG|g" \
-  -e "s|__AEDIS_PLATFORM_REF__|$REF|g" \
+  -e "s|__AEDIS_PLATFORM_REF__|$REF|g" -e "s|__AEDIS_PLATFORM_PIN__|$REF|g" \
   -e "s|__AEDIS_CHART__|$CHART|g" \
   -e "s|__AEDIS_CHART_VERSION__|$CHART_VERSION|g" \
   -e "s|__AEDIS_SECRETS_PROVIDER__|$SECRETS_PROVIDER|g" \
