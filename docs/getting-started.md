@@ -88,7 +88,10 @@ Todo `uses:` de um workflow ou action desta plataforma aponta para o **SHA do co
 As tags saem do `release.yml` desta plataforma a cada push em `main` que libera algo (Conventional Commits). Com o
 comentário `# vX.Y.Z`, o Dependabot (`package-ecosystem: github-actions`) abre o pull request de repin a cada release,
 SHA e comentário juntos; um pin em `main` ou numa branch de PR nunca é atualizado e some quando a branch é apagada.
-O input `platform-ref` dos reutilizáveis é opcional: vazio, os scripts vêm do mesmo commit do workflow pinado.
+O input `platform-ref` dos reutilizáveis é opcional: vazio, os scripts vêm do mesmo commit do workflow pinado. A
+mesma regra vale para a action composta (`.github/actions/dast@<sha da tag> # vX.Y.Z`); a tag maior `v1` existe
+para humanos e docs, não para um `uses:`. `aedis platform init` já grava os pins assim, e
+`aedis platform validate --level 2` cobra isso (PLT-22). Política de versões e suporte em [versioning.md](versioning.md).
 
 ## 5. O que o chart faz pela aplicação Aedis
 
@@ -112,3 +115,4 @@ Os segredos chegam por `envFrom` do `Secret <name>-secret`; a chave `Database__C
 - [Sites Next.js com Aedis UI](sites.md): `aedis platform new-site`, `aedis-ci` com `language: node`, `type: site`
 - Guias por nuvem: [AWS](clouds/aws.md), [Azure](clouds/azure.md), [DigitalOcean e genérico](clouds/generic.md)
 - [Níveis de conformidade](conformance.md)
+- [Versões, suporte e publicação dos workflows](versioning.md)

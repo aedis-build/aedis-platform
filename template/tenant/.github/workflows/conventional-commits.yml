@@ -8,8 +8,6 @@ permissions: {}
 
 jobs:
   check:
-    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@__AEDIS_PLATFORM_REF__
+    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@__AEDIS_PLATFORM_PIN__
     permissions:
       contents: read
-    with:
-      platform-ref: __AEDIS_PLATFORM_REF__

@@ -22,7 +22,7 @@ permissions: {}
 jobs:
   aedis:
     if: github.event.action != 'closed'
-    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@__AEDIS_PLATFORM_REF__
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@__AEDIS_PLATFORM_PIN__
     permissions:
       contents: read
       actions: read
@@ -35,4 +35,3 @@ jobs:
       min-branch: 70
       no-regression: true
       dast-start: "pnpm build && pnpm start > site.log 2>&1 &"
-      platform-ref: __AEDIS_PLATFORM_REF__

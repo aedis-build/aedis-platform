@@ -7,7 +7,7 @@ Practices e cobertura de código; os controles de plataforma (`PLT-xx`) somam a 
 | Nível | Régua base | Controles de plataforma |
 |---|---|---|
 | **L1 Baseline** | Scorecard roda e publica (sem 0 em Token-Permissions, Dangerous-Workflow, Binary-Artifacts); checklist Best Practices *passing*; cobertura publicada, ≥ 60 % linhas | baseline de pod do chart, schema, segredos via ESO, probes, PDB |
-| **L2 Hardened** | Scorecard ≥ 7 e Branch-Protection, Code-Review, Pinned-Dependencies, SAST, Vulnerabilities ≥ 8; Best Practices *silver*; ≥ 75 % linhas, ≥ 60 % branches, sem regressão | imagem assinada (cosign) e pinada por digest em prod, SBOM anexado, Kyverno em enforce, NetworkPolicy de egresso, PSA restricted, gate SAST |
+| **L2 Hardened** | Scorecard ≥ 7 e Branch-Protection, Code-Review, Pinned-Dependencies, SAST, Vulnerabilities ≥ 8; Best Practices *silver*; ≥ 75 % linhas, ≥ 60 % branches, sem regressão | imagem assinada (cosign) e pinada por digest em prod, SBOM anexado, Kyverno em enforce, NetworkPolicy de egresso, PSA restricted, gate SAST, workflows da plataforma pinados em tag de release |
 | **L3 Regulated** | Scorecard ≥ 9 com todo check sob controle do processo em 10 (Dangerous-Workflow, Token-Permissions, Binary-Artifacts, Vulnerabilities, Dependency-Update-Tool, Security-Policy, License, SAST, Pinned-Dependencies, Code-Review, Signed-Releases, Fuzzing) e Branch-Protection ≥ 8; Best Practices *gold*; ≥ 85 % linhas, ≥ 70 % branches | gate DAST, attestation verificada no admission, prod só por PR com aprovação, drift report, WAF declarado, evidências retidas |
 
 Os limiares vivem em `conformance/levels.yaml`; um tenant pode subi-los, nunca baixá-los.
@@ -39,6 +39,7 @@ JavaScript/TypeScript, além de ClusterFuzzLite e OSS-Fuzz.
 | PLT-14 | DAST na superfície exposta | `.github/actions/dast` | OWASP Top 10, NIST SSDF PW.8 |
 | PLT-15 | Varredura contínua das imagens em uso | `image-scan.yml` | NIST SSDF PW.4, RV.1 |
 | PLT-16 | Detecção de drift em prod | `drift-report.yml` | NIST DE.CM |
+| PLT-22 | Workflows e actions da plataforma pinados no SHA de uma tag de release | `aedis platform validate --level 2`, [versioning.md](versioning.md) | SLSA (dependências pinadas), Scorecard Pinned-Dependencies |
 
 Mapeamentos completos (OWASP Top 10 2021, OWASP Kubernetes Top 10, NIST CSF 2.0, NIST SSDF, ISO 27001:2022 A.8,
 CIS Kubernetes Benchmark) em `docs/compliance/platform-controls.md` (Fase 5).

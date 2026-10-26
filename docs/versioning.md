@@ -1,0 +1,53 @@
+# Versões, suporte e publicação dos workflows
+
+Os workflows reutilizáveis (`.github/workflows/*.yml` com `workflow_call`) e as actions compostas
+(`.github/actions/*`) deste repositório são publicados como releases `vX.Y.Z`, e é só por elas que um repositório
+os consome.
+
+## Versão
+
+Semver derivado dos Conventional Commits desde a release anterior, pelo `release.yml` a cada push em `main`
+(`scripts/next-version.sh`):
+
+| Commits desde a última tag | Incremento |
+|---|---|
+| `tipo!:` ou rodapé `BREAKING CHANGE` | major |
+| `feat` | minor |
+| `fix`, `perf`, `refactor`, `revert`, `build(deps)` | patch |
+| só `docs`, `ci`, `chore`, `test`, `style` | nenhuma release |
+
+Uma release é: a tag `vX.Y.Z`; a GitHub Release com as notas geradas dos commits (impacto da atualização primeiro,
+depois features, correções, dependências), **imutável** (a tag não se move e os assets não mudam depois de
+publicada; configuração do repositório, conferida pelo workflow) e **atestada** pelo GitHub
+(`gh release verify vX.Y.Z -R aedis-build/aedis-platform`); e a tag maior `v1`, movida para a última release do
+major, para humanos e docs. [CHANGELOG.md](../CHANGELOG.md) é regenerado a partir das notas de todas as releases num
+pull request `docs(changelog)` que o próprio `release.yml` abre e atualiza.
+
+## Suporte
+
+- **Um major suportado por vez**: o atual. O anterior recebe correções só até a primeira minor do novo.
+- **Quebra de compatibilidade só em major**: remover ou renomear um input, um output, um secret ou um artefato,
+  mudar um default que altera o resultado, exigir uma permissão a mais do caller.
+- **Aviso uma minor antes**: o que vai ser removido no próximo major emite, no workflow, um
+  `echo "::warning::deprecated: <o que> is removed in v<N+1>; use <o quê>"` desde a minor que introduz a
+  substituição, e a nota da release o lista em *Deprecations*.
+- **Patch para correções**, inclusive de segurança, sem mudança de interface; o Dependabot leva ao caller.
+
+## Como um repositório consome
+
+Pin pelo **SHA do commit da tag** com a tag no comentário, em workflows e actions; nunca um commit de branch, nunca
+a tag solta (uma tag pode ser movida por quem tem escrita; o SHA não):
+
+```yaml
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # v1.2.3
+      - uses: aedis-build/aedis-platform/.github/actions/dast@<sha da tag> # v1.2.3
+```
+
+Com o `package-ecosystem: github-actions` no `.github/dependabot.yml` (os templates do tenant e do site já o trazem),
+o Dependabot abre o pull request de repin a cada release, SHA e comentário juntos. `aedis platform init` e
+`new-site` já escrevem esse formato (`--platform-ref v1` resolve para a release mais alta do major), e
+`aedis platform validate --level 2` falha (controle PLT-22) quando um `uses:` da plataforma não aponta para o SHA de
+uma tag `vX.Y.Z`.
+
+Para quem dá manutenção: a primeira release de um major é cortada à mão (`gh workflow run release -f bump=major`);
+as seguintes saem sozinhas a cada push em `main` que libera algo.
