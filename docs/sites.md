@@ -229,6 +229,22 @@ workflow **chamador** (`cli-release.yml` no exemplo: o npm valida o workflow que
 reutilizável) e o environment (`npm` por padrão); em *Publishing access*, exija 2FA e não permita tokens. Confirme na
 primeira publicação que a página do pacote mostra a proveniência.
 
+### Tarballs e atestações na GitHub Release: `release-attach.yml`
+
+Depois dos jobs de `release-npm.yml` (um por pacote), um último job anexa à release da tag os tarballs exatamente
+como o npm os recebeu, cada um com o bundle Sigstore (`.tgz.sigstore`) e o `integrity` nas notas, depois de verificar
+cada atestação na API do GitHub e contra o bundle que vai para a release. Quem não alcança o npm instala e audita
+offline: `gh attestation verify <tgz> --owner <org> && npm install ./<tgz>`.
+
+```yaml
+  release:
+    needs: [publish, names]
+    uses: aedis-build/aedis-platform/.github/workflows/release-attach.yml@<sha da tag> # vX.Y.Z
+    permissions: { contents: write }
+    with:
+      title: "@aedis/cli ${{ github.ref_name }}"
+```
+
 ## 7. Regressão visual: `visual-regression.yml`
 
 Um site com baselines de screenshot (Playwright `toHaveScreenshot`) compara cada pull request com elas por este
