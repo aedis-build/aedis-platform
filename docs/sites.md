@@ -263,3 +263,48 @@ jobs:
 A versão da imagem (`playwright-image`) acompanha a do `@playwright/test` no lockfile: quando uma sobe, a outra sobe
 no mesmo commit, e as baselines são regeneradas.
 
+
+## 8. Corte de release: `release-cut.yml`
+
+A próxima versão vem dos Conventional Commits desde a última tag (`scripts/next-version.sh`: breaking → major,
+`feat` → minor, `fix`/`perf`/`refactor`/`revert`/`build(deps` → patch; o resto não libera). Num repositório cuja
+versão vive em arquivos (`version-files`), cada push no branch padrão propõe um pull request `chore(release): vX.Y.Z`
+que sobe a `version` deles, a dependência exata `pin-dependency` dentro deles, o `version-source` (um fonte com
+`version-source-pattern`), os pins `<pin-pattern>X.Y.Z` dos docs e o lockfile (`lockfile-command`); quando o PR chega
+ao branch padrão, o workflow põe uma tag por prefixo de `tag-prefixes` nesse commit, e os workflows de release em
+`push: tags` assumem. Sem `version-files` (a versão só existe na tag) a tag vai direto no commit atual, sem PR. Nada é
+proposto antes da primeira tag: a primeira release é cortada por uma execução manual com `bump` explícito.
+
+Branch, PR e tags saem com o token de curta duração da GitHub App (secrets `app-id` e `app-private-key`, os
+`AEDIS_APP_*` da organização): uma tag empurrada com o `GITHUB_TOKEN` não dispara workflow nenhum.
+
+```yaml
+# .github/workflows/release-cut.yml
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      bump: { type: choice, options: [auto, patch, minor, major], default: auto }
+permissions: {}
+concurrency: { group: release-cut, cancel-in-progress: false }
+jobs:
+  cut:
+    uses: aedis-build/aedis-platform/.github/workflows/release-cut.yml@<sha da tag> # vX.Y.Z
+    permissions: { contents: read }
+    with:
+      bump: ${{ inputs.bump || 'auto' }}
+      tag-prefixes: v cli-v
+      version-files: package.json packages/cli/package.json packages/aedis-cli/package.json
+      pin-dependency: "@aedis/cli"
+      version-source: packages/cli/src/cli.ts
+      version-source-pattern: 'export const VERSION = "{version}";'
+      pin-pattern: "@aedis/cli@"
+      lockfile-command: pnpm install --lockfile-only
+    secrets:
+      app-id: ${{ secrets.AEDIS_APP_ID }}
+      app-private-key: ${{ secrets.AEDIS_APP_PRIVATE_KEY }}
+```
+
+Um repositório .NET, cuja versão é só a tag, chama o mesmo reutilizável sem `version-files`, só em
+`workflow_dispatch`; a tag `vX.Y.Z` empurrada pela App dispara o `release-nuget.yml`.

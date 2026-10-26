@@ -1,0 +1,235 @@
+# Corte de release por Conventional Commits, chamado pelo repositório do produto em push no branch padrão e por
+# workflow_dispatch (input bump). A cada push, a próxima versão vem dos commits desde a última tag
+# (scripts/next-version.sh: breaking → major, feat → minor, fix/perf/refactor/revert/deps → patch, o resto não libera).
+#
+# Dois formatos de repositório:
+# - Com `version-files` (package.json cuja `version` acompanha a release, como o aedis-ui): a versão é proposta num
+#   pull request "chore(release): vX.Y.Z" que sobe a version desses arquivos, a dependência exata `pin-dependency`
+#   dentro deles, o `version-source` (um fonte com `version-source-pattern`, ex. o VERSION do CLI), os pins
+#   `<pin-pattern>X.Y.Z` nos arquivos versionados (docs) e, se houver `lockfile-command`, o lockfile. O PR passa pelo
+#   mesmo CI e gate que qualquer mudança; quando ele chega ao branch padrão, este workflow põe as tags
+#   (`<prefixo>X.Y.Z` para cada um de `tag-prefixes`) nesse commit, e os workflows de release do repositório
+#   assumem. Nada é proposto antes da primeira tag existir: a primeira release é cortada de propósito, com o bump de
+#   uma execução manual, e fica com a versão que os fontes já declaram quando ela é maior que a calculada (então
+#   não há PR: o branch padrão já diz essa versão, e ela é tagueada ali mesmo).
+# - Sem `version-files` (o aedis-dotnet e esta plataforma: a versão só existe na tag): a próxima tag é empurrada
+#   direto no commit atual, sem pull request.
+#
+# Branch, PR e tags são feitos com o token de curta duração da GitHub App (secrets app-id e app-private-key): uma
+# tag empurrada com o GITHUB_TOKEN não inicia workflow nenhum, e não existe token de longa duração. Sem os secrets o
+# workflow avisa e termina verde. Permissão que o caller concede: contents: read (quem escreve é a App).
+name: release-cut
+
+on:
+  workflow_call:
+    inputs:
+      bump:
+        description: auto (pelos commits desde a última tag) ou patch/minor/major; qualquer um dos três também corta a primeira release
+        type: string
+        default: auto
+      tag-prefixes:
+        description: Prefixos das tags separados por espaço; o primeiro nomeia a release (git describe, título do PR). Ex. "v cli-v"
+        type: string
+        default: v
+      version-files:
+        description: package.json (separados por espaço) cuja `version` acompanha a release; o primeiro é a versão atual. Vazio tagueia direto
+        type: string
+        default: ""
+      pin-dependency:
+        description: Dependência que, dentro de version-files, é pinada exatamente na versão da release (ex. "@aedis/cli")
+        type: string
+        default: ""
+      version-source:
+        description: Arquivo fonte que declara a versão (ex. packages/cli/src/cli.ts); exige version-source-pattern
+        type: string
+        default: ""
+      version-source-pattern:
+        description: 'Texto literal com {version} no lugar da versão, ex. ''export const VERSION = "{version}";'''
+        type: string
+        default: ""
+      pin-pattern:
+        description: Prefixo literal cujas ocorrências `<pin-pattern><versão atual>` nos arquivos versionados passam à nova (ex. "@aedis/cli@"); lockfiles ficam de fora
+        type: string
+        default: ""
+      lockfile-command:
+        description: Comando que refaz o lockfile depois do bump (ex. "pnpm install --lockfile-only"); vazio para nenhum
+        type: string
+        default: ""
+      node-version:
+        type: string
+        default: "22"
+      platform-ref:
+        description: Commit/tag do aedis-platform de onde vem next-version.sh; vazio usa o mesmo commit deste workflow
+        type: string
+        default: ""
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+    outputs:
+      tag:
+        description: Primeira tag empurrada nesta execução (vazio quando só houve PR, ou nada a liberar)
+        value: ${{ jobs.cut.outputs.tag }}
+
+permissions: {}
+
+jobs:
+  cut:
+    name: Tag a merged release, or propose the next one
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.tag.outputs.tag || steps.next.outputs.tag }}
+    env:
+      PREFIXES: ${{ inputs.tag-prefixes }}
+      VERSION_FILES: ${{ inputs.version-files }}
+    steps:
+      # Os secrets da App são de organização, concedidos por repositório. Sem eles nada pode ser tagueado nem aberto,
+      # então o workflow diz isso e termina verde em vez de falhar a cada push.
+      - name: The App's credentials reach this repository
+        id: guard
+        env:
+          APP_ID: ${{ secrets.app-id }}
+        run: |
+          if [ -z "$APP_ID" ]; then
+            echo "::warning::app-id is empty (organization secret, selected repositories): release-cut does nothing until it reaches this repository"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        if: steps.guard.outputs.enabled == 'true'
+        id: app
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+          # O token da App fica no checkout para os pushes abaixo; expira em uma hora.
+          persist-credentials: true
+      - name: Scripts do aedis-platform
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aedis-build/aedis-platform
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
+          path: .aedis-platform
+          persist-credentials: false
+      # O pnpm só existe para refazer o lockfile; action-setup lê a versão do packageManager do repositório.
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        if: steps.guard.outputs.enabled == 'true' && contains(inputs.lockfile-command, 'pnpm')
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: steps.guard.outputs.enabled == 'true'
+        with:
+          node-version: ${{ inputs.node-version }}
+      - name: Git identity (the App's bot user, so commits and tags carry who made them)
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          id="$(gh api "users/${SLUG}[bot]" --jq .id)"
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+
+      # Um PR de release mesclado chega ao branch padrão como "chore(release): <prefixo>X.Y.Z": tagueia esse commit, uma vez.
+      - name: Tag a merged release
+        id: tag
+        if: steps.guard.outputs.enabled == 'true' && github.event_name == 'push' && inputs.version-files != ''
+        run: |
+          set -euo pipefail
+          read -r first _ <<< "$PREFIXES"
+          subject="$(git log -1 --format=%s)"
+          if [[ ! "$subject" =~ ^chore\(release\):\ $first([0-9]+\.[0-9]+\.[0-9]+)( |$) ]]; then exit 0; fi
+          version="${BASH_REMATCH[1]}"
+          read -r file _ <<< "$VERSION_FILES"
+          declared="$(node -p "require('./$file').version")"
+          test "$declared" = "$version" || { echo "::error::$subject but $file says $declared"; exit 1; }
+          if git ls-remote --exit-code --tags origin "refs/tags/$first$version" >/dev/null; then echo "$first$version exists"; echo "done=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          refs=()
+          for p in $PREFIXES; do git tag -a "$p$version" -m "release $p$version"; refs+=("refs/tags/$p$version"); done
+          git push origin "${refs[@]}"
+          echo "tagged ${refs[*]#refs/tags/}"
+          echo "tag=$first$version" >> "$GITHUB_OUTPUT"
+          echo "done=true" >> "$GITHUB_OUTPUT"
+
+      - name: Propose the next release
+        id: next
+        if: steps.guard.outputs.enabled == 'true' && steps.tag.outputs.done != 'true'
+        env:
+          BUMP: ${{ inputs.bump }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          DEP: ${{ inputs.pin-dependency }}
+          SOURCE: ${{ inputs.version-source }}
+          SOURCE_PATTERN: ${{ inputs.version-source-pattern }}
+          PIN: ${{ inputs.pin-pattern }}
+          LOCKFILE: ${{ inputs.lockfile-command }}
+        run: |
+          set -euo pipefail
+          read -r first _ <<< "$PREFIXES"
+          last="$(git describe --tags --abbrev=0 --match "${first}[0-9]*.[0-9]*.[0-9]*" 2>/dev/null || true)"
+          if [ -z "$last" ] && [ "$BUMP" = auto ]; then
+            echo "no release yet: cut the first one with a manual run and an explicit bump"; exit 0
+          fi
+          range="$([ -n "$last" ] && echo "$last..HEAD" || echo HEAD)"
+          next="$(git log --format='%s%n%b' $range | bash .aedis-platform/scripts/next-version.sh --last "$last" --bump "$BUMP")"
+          [ -n "$next" ] || exit 0
+          current=""
+          if [ -n "$VERSION_FILES" ]; then
+            read -r file _ <<< "$VERSION_FILES"
+            current="$(node -p "require('./$file').version")"
+            # A primeira release fica com a versão que os fontes já declaram quando ela é maior que a calculada.
+            if [ -z "$last" ] && [ "$(printf '%s\n%s\n' "$current" "$next" | sort -V | tail -1)" = "$current" ]; then next="$current"; fi
+          fi
+          echo "${last:-no tag} → $first$next ($BUMP)"
+
+          tags=(); refs=()
+          for p in $PREFIXES; do tags+=("$p$next"); refs+=("refs/tags/$p$next"); done
+          # Sem arquivos de versão, ou quando o branch padrão já declara a versão: a tag vai direto no commit atual.
+          if [ -z "$VERSION_FILES" ] || [ "$next" = "$current" ]; then
+            for t in "${tags[@]}"; do git tag -a "$t" -m "release $t"; done
+            git push origin "${refs[@]}"
+            echo "tagged ${tags[*]} on $GITHUB_REF_NAME"
+            echo "tag=$first$next" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+
+          NEXT="$next" CURRENT="$current" node - <<'JS'
+          const fs = require("node:fs");
+          const { NEXT, CURRENT, VERSION_FILES, DEP, SOURCE, SOURCE_PATTERN } = process.env;
+          for (const file of VERSION_FILES.split(/\s+/).filter(Boolean)) {
+            const json = JSON.parse(fs.readFileSync(file, "utf8"));
+            json.version = NEXT;
+            if (DEP && json.dependencies?.[DEP]) json.dependencies[DEP] = NEXT;
+            fs.writeFileSync(file, JSON.stringify(json, null, 2) + "\n");
+          }
+          if (SOURCE) {
+            if (!SOURCE_PATTERN.includes("{version}")) throw new Error("version-source-pattern must contain {version}");
+            const before = SOURCE_PATTERN.replace("{version}", CURRENT);
+            const text = fs.readFileSync(SOURCE, "utf8");
+            if (!text.includes(before)) throw new Error(`${SOURCE} does not contain ${JSON.stringify(before)}`);
+            fs.writeFileSync(SOURCE, text.split(before).join(SOURCE_PATTERN.replace("{version}", NEXT)));
+          }
+          JS
+          # Os comandos de instalação pinados nos docs acompanham a release; lockfiles ficam de fora (o comando abaixo os refaz).
+          if [ -n "$PIN" ]; then
+            git grep -lz --fixed-strings "$PIN$current" -- ':!pnpm-lock.yaml' ':!package-lock.json' ':!yarn.lock' \
+              | xargs -0 -r sed -i "s|$(printf '%s' "$PIN$current" | sed 's/[.[\*^$|]/\\&/g')|$PIN$next|g"
+          fi
+          if [ -n "$LOCKFILE" ]; then $LOCKFILE; fi
+
+          branch="release/$first$next"
+          git checkout -q -B "$branch"
+          git add -A
+          git commit -q -s -m "chore(release): $first$next" -m "$(printf 'Commits since %s:\n\n%s' "${last:-the beginning}" "$(git log --format='- %s' $range)")"
+          git push -q --force origin "HEAD:refs/heads/$branch"
+          body="$(printf 'Release pull request made by release-cut.yml (aedis-platform) from the Conventional Commits since %s. Merging it tags %s on the merged commit, and the release workflows of this repository take over.\n\n%s' "${last:-the beginning}" "$(printf '`%s` ' "${tags[@]}")" "$(git log --format='- %s' $range)")"
+          number="$(gh pr list --head "$branch" --base "$GITHUB_REF_NAME" --state open --json number --jq '.[0].number')"
+          if [ -n "$number" ]; then gh pr edit "$number" --title "chore(release): $first$next" --body "$body"
+          else gh pr create --head "$branch" --base "$GITHUB_REF_NAME" --title "chore(release): $first$next" --body "$body"; fi

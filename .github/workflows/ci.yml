@@ -170,6 +170,7 @@ jobs:
       - run: pipx run reuse==5.0.2 lint
       - run: python3 scripts/deps-summary.py --self-test
       - run: python3 scripts/release-notes.py --self-test
+      - run: bash scripts/next-version.sh --self-test
 
   tenant-template:
     if: github.event.action != 'closed'
