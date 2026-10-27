@@ -19,7 +19,7 @@ cobertura de código) em três níveis.
 | `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-static`, `release-registry-js`, `release-npm`, `release-cut`, `visual-regression`; em seguida `promote`) |
 | `.github/actions/dast` | Ação composta: ZAP baseline contra a URL alvo, sumário `dast-summary/v1` e gate com aceites de risco com validade |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |
-| `docs/` | Guias por nuvem, referência do chart, controles de segurança, níveis de conformidade e [versões e suporte dos workflows](docs/versioning.md) |
+| `docs/` | Guias por nuvem, referência do chart, controles de segurança, níveis de conformidade, [versões e suporte dos workflows](docs/versioning.md) e o [perfil enterprise](docs/enterprise.md) (GitHub Enterprise Cloud, repositório privado) |
 
 ## Como funciona
 
