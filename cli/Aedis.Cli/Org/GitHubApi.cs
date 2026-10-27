@@ -260,6 +260,15 @@ public sealed class GitHubApi
                ?? throw new InvalidOperationException("installation token missing in the response");
     }
 
+    /// <summary>Slug da própria GitHub App (<c>GET /app</c> com o JWT): <c>&lt;slug&gt;[bot]</c> é o login que assina as aprovações. Nulo quando não legível.</summary>
+    public async Task<string?> GetAppSlugAsync(string appJwt, CancellationToken ct) {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/app");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", appJwt);
+        using var response = await _http.SendAsync(request, ct);
+        if (!response.IsSuccessStatusCode) return null;
+        return (JsonNode.Parse(await response.Content.ReadAsStringAsync(ct)) as JsonObject)?["slug"]?.GetValue<string>();
+    }
+
     /// <summary>Objeto da organização (<c>GET /orgs/{org}</c>); vazio quando não há acesso.</summary>
     public async Task<JsonObject> GetOrganizationAsync(string org, CancellationToken ct) =>
         await GetJsonAsync<JsonObject>($"https://api.github.com/orgs/{org}", ct) ?? new JsonObject();

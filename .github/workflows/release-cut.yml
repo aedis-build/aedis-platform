@@ -15,7 +15,8 @@
 # - Sem `version-files` (o aedis-dotnet e esta plataforma: a versão só existe na tag): a próxima tag é empurrada
 #   direto no commit atual, sem pull request.
 #
-# Branch, PR e tags são feitos com o token de curta duração da GitHub App (secrets app-id e app-private-key): uma
+# Branch, PR e tags são feitos com o token de curta duração da GitHub App de código do caller (secrets app-id e
+# app-private-key: a App que está em trustedAuthors, ex. Aedis Agent Coder; nunca a App do portão, que revisa): uma
 # tag empurrada com o GITHUB_TOKEN não inicia workflow nenhum, e não existe token de longa duração. Sem os secrets o
 # workflow avisa e termina verde. Permissão que o caller concede: contents: read (quem escreve é a App).
 name: release-cut

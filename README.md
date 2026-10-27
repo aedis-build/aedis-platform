@@ -90,6 +90,9 @@ issues e workflows, e nunca de administração. `aedis agent token --org <org> -
 imprime um token de instalação válido por uma hora, usado no `git` e no `gh`. O agente passa a ser o autor das PRs e
 o mantenedor, o revisor: com o Aedis Compliance, isso fecha as duas aprovações sem bypass de administrador. Bots vão
 entre aspas em `trustedAuthors` (`"aedis-agent-coder[bot]"`), porque os colchetes quebram a lista em YAML.
+Os workflows que autoram (release-cut, o changelog desta plataforma) usam a mesma App, pelos secrets
+`AEDIS_CODER_APP_ID` e `AEDIS_CODER_APP_PRIVATE_KEY` da organização; a App do portão nunca autora, e o portão
+recusa (`self-review`) qualquer PR de que ela própria seja autora.
 
 ## Licença
 
