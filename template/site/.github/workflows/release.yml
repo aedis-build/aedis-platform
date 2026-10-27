@@ -11,7 +11,7 @@ permissions: {}
 
 jobs:
   image:
-    uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@__AEDIS_PLATFORM_REF__
+    uses: aedis-build/aedis-platform/.github/workflows/build-image.yml@__AEDIS_PLATFORM_PIN__
     permissions:
       contents: read
       packages: write
