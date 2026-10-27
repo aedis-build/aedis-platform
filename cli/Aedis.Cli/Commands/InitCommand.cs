@@ -11,7 +11,7 @@ public static class InitCommand
         var cloud = new Option<CloudProvider>("--cloud") { Description = "Perfil de nuvem: aws | azure | digitalocean | generic", DefaultValueFactory = _ => CloudProvider.Generic };
         var org = new Option<string>("--org") { Description = "Organização do GitHub (dona do repo e dos times de CODEOWNERS)", Required = true };
         var envs = new Option<string>("--envs") { Description = "Ambientes separados por vírgula", DefaultValueFactory = _ => "dev,prod" };
-        var platformRef = new Option<string>("--platform-ref") { Description = "Ref do aedis-platform usada pelos workflows", DefaultValueFactory = _ => "v1" };
+        var platformRef = new Option<string>("--platform-ref") { Description = "Ref do aedis-platform para os workflows (vX.Y.Z, v1 = última release do major, branch ou SHA); gravada como <sha> # <tag>", DefaultValueFactory = _ => "v1" };
         var chart = new Option<string>("--chart") { Description = "Referência OCI do chart", DefaultValueFactory = _ => "oci://ghcr.io/aedis-build/charts/aedis-app" };
         var chartVersion = new Option<string>("--chart-version") { Description = "Versão do chart", DefaultValueFactory = _ => "0.1.0" };
         var output = new Option<string>("--out") { Description = "Diretório de saída (padrão: diretório atual)", DefaultValueFactory = _ => "." };
@@ -28,7 +28,7 @@ public static class InitCommand
             }
 
             var options = new TenantOptions(parse.GetValue(cloud), parse.GetValue(org)!, environments,
-                parse.GetValue(platformRef)!, parse.GetValue(chart)!, parse.GetValue(chartVersion)!);
+                PlatformPin.Resolve(parse.GetValue(platformRef)!), parse.GetValue(chart)!, parse.GetValue(chartVersion)!);
             var files = TenantTemplate.Render(TenantTemplate.ReadEmbedded(), options);
             var root = Path.GetFullPath(parse.GetValue(output)!);
             var written = TenantTemplate.WriteTo(root, files, parse.GetValue(force));

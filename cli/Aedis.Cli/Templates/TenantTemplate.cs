@@ -20,7 +20,7 @@ public enum CloudProvider
 /// <param name="Cloud">Perfil de nuvem.</param>
 /// <param name="Org">Organização do GitHub (dona do repo GitOps e dos times de CODEOWNERS).</param>
 /// <param name="Environments">Ambientes (um <c>platform/values/&lt;env&gt;.yaml</c> por item).</param>
-/// <param name="PlatformRef">Ref do aedis-platform usada pelos workflows do tenant.</param>
+/// <param name="PlatformRef">Pin do aedis-platform nos workflows do tenant (<c>&lt;sha&gt; # vX.Y.Z</c>, de <see cref="PlatformPin.Resolve" />).</param>
 /// <param name="Chart">Referência OCI do chart.</param>
 /// <param name="ChartVersion">Versão do chart.</param>
 public sealed record TenantOptions(
@@ -103,7 +103,7 @@ public static class TenantTemplate
     public static string ReplaceTokens(string content, TenantOptions o) => content
         .Replace("__AEDIS_CLOUD__", o.CloudName)
         .Replace("__AEDIS_ORG__", o.Org)
-        .Replace("__AEDIS_PLATFORM_REF__", o.PlatformRef)
+        .Replace("__AEDIS_PLATFORM_PIN__", o.PlatformRef)
         .Replace("__AEDIS_CHART_VERSION__", o.ChartVersion)
         .Replace("__AEDIS_CHART__", o.Chart)
         .Replace("__AEDIS_SECRETS_PROVIDER__", o.SecretsProvider)

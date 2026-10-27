@@ -46,12 +46,12 @@ public static partial class ConformanceChecker
         var result = new ConformanceResult { LevelName = target.Name };
 
         foreach (var control in selected.SelectMany(l => l.Controls))
-            result.Controls.Add(Evaluate(control, validation));
+            result.Controls.Add(Evaluate(control, validation, root));
 
         return result;
     }
 
-    private static ControlResult Evaluate(ControlDefinition control, ValidationResult validation) {
+    private static ControlResult Evaluate(ControlDefinition control, ValidationResult validation, string root) {
         var manifests = validation.Rendered.ToDictionary(kv => kv.Key, kv => File.ReadAllText(kv.Value), StringComparer.Ordinal);
         var prod = manifests.Where(kv => IsProd(kv.Value)).ToList();
         return control.Check switch {
@@ -64,6 +64,7 @@ public static partial class ConformanceChecker
             "egress-policy-prod" => Result(control, prod.All(kv => kv.Value.Contains("-egress", StringComparison.Ordinal)), Missing(prod, m => m.Contains("-egress", StringComparison.Ordinal))),
             "waf-declared-prod" => Result(control, prod.Where(kv => kv.Value.Contains("kind: Ingress", StringComparison.Ordinal)).All(kv => WafDeclared(kv.Key, validation)), "APIs expostas em prod sem ingress.edge.waf: true"),
             "prod-by-pr" => Result(control, CodeownersCoverProd(validation), "CODEOWNERS não cobre apps/*/env/prod.yaml"),
+            "platform-pins-released" => Result(control, UnreleasedPlatformPins(root).Count == 0, string.Join(", ", UnreleasedPlatformPins(root))),
             _ => new ControlResult(control.Id, control.Title, "unknown", $"depende de {control.Source} (CI/cluster)")
         };
     }
@@ -90,6 +91,28 @@ public static partial class ConformanceChecker
         var root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(first)!, "..", "..", ".."));
         var codeowners = Path.Combine(root, "CODEOWNERS");
         return File.Exists(codeowners) && File.ReadAllText(codeowners).Contains("/apps/*/env/prod.yaml", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Linhas <c>uses: aedis-build/aedis-platform/...</c> dos workflows do repo que não pinam o SHA de uma tag de
+    ///     release (<c>@&lt;sha&gt; # vX.Y.Z</c>): uma tag solta, uma branch ou um SHA sem a tag no comentário, que o
+    ///     Dependabot não acompanha. Vazio quando todos cumprem, ou quando não há workflows.
+    /// </summary>
+    public static IReadOnlyList<string> UnreleasedPlatformPins(string root) {
+        var dir = Path.Combine(root, ".github", "workflows");
+        if (!Directory.Exists(dir)) return [];
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(dir).Where(f => f.EndsWith(".yml", StringComparison.Ordinal) || f.EndsWith(".yaml", StringComparison.Ordinal)).Order(StringComparer.Ordinal)) {
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++) {
+                var match = PlatformUses().Match(lines[i]);
+                if (!match.Success) continue;
+                if (Sha40().IsMatch(match.Groups["ref"].Value) && ReleaseTag().IsMatch(match.Groups["comment"].Value)) continue;
+                offenders.Add($"{Path.GetRelativePath(root, file).Replace('\\', '/')}:{i + 1} @{match.Groups["ref"].Value}");
+            }
+        }
+
+        return offenders;
     }
 
     /// <summary><c>conformance/levels.yaml</c> do tenant, se existir, senão o embarcado.</summary>
@@ -156,6 +179,15 @@ public static partial class ConformanceChecker
 
     [GeneratedRegex(@"waf:\s*true")]
     private static partial Regex WafTrue();
+
+    [GeneratedRegex(@"uses:\s*aedis-build/aedis-platform/\S+@(?<ref>\S+)(?:\s+#\s*(?<comment>\S+))?")]
+    private static partial Regex PlatformUses();
+
+    [GeneratedRegex("^[0-9a-f]{40}$")]
+    private static partial Regex Sha40();
+
+    [GeneratedRegex(@"^v\d+\.\d+\.\d+$")]
+    private static partial Regex ReleaseTag();
 
     /// <summary>Mínimos do OpenSSF Scorecard exigidos por um nível: nota agregada e notas por check.</summary>
     public sealed class ScorecardMinimum

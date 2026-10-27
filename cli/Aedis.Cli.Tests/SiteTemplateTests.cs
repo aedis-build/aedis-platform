@@ -27,11 +27,11 @@ public sealed class SiteTemplateTests
 
     [Fact]
     public void Instanciacao_substitui_nome_org_e_ref_sem_deixar_token() {
-        var files = SiteTemplate.Render(Template, "portal", "acme", "abc123");
+        var files = SiteTemplate.Render(Template, "portal", "acme", "abc123 # v1.2.3");
 
         files.Values.Should().AllSatisfy(content => content.Should().NotContain("__AEDIS_"));
         files["package.json"].Should().Contain("\"name\": \"portal\"");
         files["deploy/app.yaml"].Should().Contain("repository: ghcr.io/acme/portal");
-        files[".github/workflows/aedis-ci.yml"].Should().Contain("aedis-ci.yml@abc123").And.Contain("platform-ref: abc123");
+        files[".github/workflows/aedis-ci.yml"].Should().Contain("aedis-ci.yml@abc123 # v1.2.3").And.NotContain("platform-ref");
     }
 }

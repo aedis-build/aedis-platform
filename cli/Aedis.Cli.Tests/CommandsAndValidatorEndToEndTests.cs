@@ -23,7 +23,7 @@ public sealed class CommandsAndValidatorEndToEndTests : IDisposable
 
     [Fact]
     public void Init_e_new_app_criam_o_repo_e_o_app() {
-        Run(InitCommand.Create(), "init", "--cloud", "aws", "--org", "acme", "--envs", "dev,prod", "--out", _dir).Should().Be(0);
+        Run(InitCommand.Create(), "init", "--platform-ref", "0123456789abcdef0123456789abcdef01234567", "--cloud", "aws", "--org", "acme", "--envs", "dev,prod", "--out", _dir).Should().Be(0);
         File.Exists(Path.Combine(_dir, "platform", "values", "prod.yaml")).Should().BeTrue();
 
         Run(NewAppCommand.Create(), "new-app", "orders-api", "--type", "api", "--namespace", "shop", "--repo", _dir).Should().Be(0);
@@ -37,7 +37,7 @@ public sealed class CommandsAndValidatorEndToEndTests : IDisposable
 
     [Fact]
     public async Task Validador_renderiza_valida_e_escreve_o_sumario() {
-        Run(InitCommand.Create(), "init", "--cloud", "generic", "--org", "acme", "--envs", "dev,prod", "--out", _dir);
+        Run(InitCommand.Create(), "init", "--platform-ref", "0123456789abcdef0123456789abcdef01234567", "--cloud", "generic", "--org", "acme", "--envs", "dev,prod", "--out", _dir);
         Run(NewAppCommand.Create(), "new-app", "orders-api", "--type", "api", "--namespace", "shop", "--repo", _dir);
         var validator = new RepoValidator(new StubHelm(), new StubKubeconform());
 
@@ -57,7 +57,7 @@ public sealed class CommandsAndValidatorEndToEndTests : IDisposable
 
     [Fact]
     public async Task Falha_de_helm_vira_checagem_fail() {
-        Run(InitCommand.Create(), "init", "--cloud", "generic", "--org", "acme", "--envs", "dev", "--out", _dir);
+        Run(InitCommand.Create(), "init", "--platform-ref", "0123456789abcdef0123456789abcdef01234567", "--cloud", "generic", "--org", "acme", "--envs", "dev", "--out", _dir);
         Run(NewAppCommand.Create(), "new-app", "orders-api", "--type", "worker", "--namespace", "shop", "--repo", _dir);
         var validator = new RepoValidator(new StubHelm(fail: true), new StubKubeconform(available: false));
 
