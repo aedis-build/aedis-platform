@@ -139,6 +139,9 @@ jobs:
           id="$(gh api "users/${SLUG}[bot]" --jq .id)"
           git config user.name "${SLUG}[bot]"
           git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+          # The platform checkout is a nested repository: excluded, or the `git add -A` of the release PR commits it as a
+          # gitlink without .gitmodules and every later checkout of the branch fails (aedis-ui v0.1.3).
+          echo .aedis-platform >> .git/info/exclude
 
       # Um PR de release mesclado chega ao branch padrão como "chore(release): <prefixo>X.Y.Z": tagueia esse commit, uma vez.
       - name: Tag a merged release
