@@ -79,7 +79,10 @@ public sealed partial class RepoValidator(HelmRunner helm, KubeconformRunner kub
             ? Directory.GetDirectories(appsDir).Where(d => File.Exists(Path.Combine(d, "app.yaml"))).Order(StringComparer.Ordinal).ToList()
             : [];
         if (appDirs.Count == 0) {
-            result.Checks.Add(new ValidationCheck("-", "-", "apps-present", "fail", $"nenhum apps/<app>/app.yaml em {root}"));
+            // Sem apps/ o repositório não é GitOps (uma action, uma biblioteca): só os controles de repositório se aplicam.
+            result.Checks.Add(Directory.Exists(appsDir)
+                ? new ValidationCheck("-", "-", "apps-present", "fail", $"nenhum apps/<app>/app.yaml em {root}")
+                : new ValidationCheck("-", "-", "apps-present", "warn", $"sem apps/ em {root}: repositório sem GitOps, só os controles de repositório se aplicam"));
             await WriteSummaryAsync(outDir, result, ct);
             return result;
         }

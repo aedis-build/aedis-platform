@@ -68,10 +68,27 @@ public sealed class CommandsAndValidatorEndToEndTests : IDisposable
     }
 
     [Fact]
-    public async Task Repo_sem_apps_falha() {
+    public async Task Apps_vazio_falha_e_sem_apps_so_avisa() {
         var result = await new RepoValidator(new StubHelm(), new StubKubeconform()).ValidateAsync(_dir, "./chart", null, Path.Combine(_dir, "out"), "1.31.0", CancellationToken.None);
+        result.Passed.Should().BeTrue();
+        result.Checks.Should().ContainSingle(c => c.Check == "apps-present" && c.Status == "warn");
 
+        Directory.CreateDirectory(Path.Combine(_dir, "apps"));
+        result = await new RepoValidator(new StubHelm(), new StubKubeconform()).ValidateAsync(_dir, "./chart", null, Path.Combine(_dir, "out"), "1.31.0", CancellationToken.None);
         result.Checks.Should().ContainSingle(c => c.Check == "apps-present" && c.Status == "fail");
+    }
+
+    /// <summary>Um repositório de código (uma action, uma biblioteca) passa no nível pelos controles de repositório; o resto não se aplica.</summary>
+    [Fact]
+    public void Repo_sem_apps_responde_so_pelos_controles_de_repositorio() {
+        Directory.CreateDirectory(Path.Combine(_dir, ".github", "workflows"));
+        File.WriteAllText(Path.Combine(_dir, ".github", "workflows", "ci.yml"), "    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@0123456789abcdef0123456789abcdef01234567 # v1.0.3");
+
+        var conformance = ConformanceChecker.Check(3, new ValidationResult(), _dir);
+
+        conformance.Failed.Should().Be(0);
+        conformance.Controls.Should().ContainSingle(c => c.Id == "PLT-22" && c.Status == "pass");
+        conformance.Controls.Should().Contain(c => c.Id == "PLT-01" && c.Status == "unknown" && c.Detail.Contains("sem apps/"));
     }
 
     private sealed class StubHelm(bool fail = false) : HelmRunner

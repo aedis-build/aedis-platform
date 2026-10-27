@@ -52,6 +52,9 @@ public static partial class ConformanceChecker
     }
 
     private static ControlResult Evaluate(ControlDefinition control, ValidationResult validation, string root) {
+        // Um repositório sem apps/ (uma action, uma biblioteca) só responde pelos controles de repositório.
+        if (!Directory.Exists(Path.Combine(root, "apps")) && control.Check != "platform-pins-released")
+            return new ControlResult(control.Id, control.Title, "unknown", "não se aplica: repositório sem apps/");
         var manifests = validation.Rendered.ToDictionary(kv => kv.Key, kv => File.ReadAllText(kv.Value), StringComparer.Ordinal);
         var prod = manifests.Where(kv => IsProd(kv.Value)).ToList();
         return control.Check switch {
