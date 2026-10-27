@@ -75,7 +75,7 @@ on:
         default: ""
       platform-ref:
         type: string
-        default: v1
+        default: ""
 
 permissions: {}
 
@@ -86,7 +86,7 @@ jobs:
     permissions:
       contents: read
     with:
-      platform-ref: ${{ inputs.platform-ref }}
+      platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
 
   coverage:
     if: inputs.language == 'dotnet' && github.event_name != 'schedule'
@@ -101,7 +101,7 @@ jobs:
       min-branch: ${{ inputs.min-branch }}
       no-regression: ${{ inputs.no-regression }}
       test-env: ${{ inputs.test-env }}
-      platform-ref: ${{ inputs.platform-ref }}
+      platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
 
   coverage-js:
     if: inputs.language == 'node' && github.event_name != 'schedule'
@@ -115,7 +115,7 @@ jobs:
       min-line: ${{ inputs.min-line }}
       min-branch: ${{ inputs.min-branch }}
       no-regression: ${{ inputs.no-regression }}
-      platform-ref: ${{ inputs.platform-ref }}
+      platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
 
   # Verificações do repositório que não são teste nem cobertura (typecheck, build estático), em ordem.
   check:
@@ -176,7 +176,7 @@ jobs:
       contents: read
       security-events: write
     with:
-      platform-ref: ${{ inputs.platform-ref }}
+      platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
       extra-configs: ${{ format('{0} {1}', inputs.language == 'node' && 'p/javascript p/typescript p/react' || '', inputs.sast-extra-configs) }}
 
   codeql:

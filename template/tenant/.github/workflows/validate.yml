@@ -9,10 +9,9 @@ permissions: {}
 
 jobs:
   validate:
-    uses: aedis-build/aedis-platform/.github/workflows/validate.yml@__AEDIS_PLATFORM_REF__
+    uses: aedis-build/aedis-platform/.github/workflows/validate.yml@__AEDIS_PLATFORM_PIN__
     permissions:
       contents: read
     with:
-      platform-ref: __AEDIS_PLATFORM_REF__
       chart: __AEDIS_CHART__
       chart-version: "__AEDIS_CHART_VERSION__"

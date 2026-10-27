@@ -7,7 +7,7 @@ on:
     inputs:
       platform-ref:
         type: string
-        default: v1
+        default: ""
       accept-file:
         description: Arquivo de aceites de risco (rule, path, until, reason)
         type: string
@@ -42,7 +42,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref }}
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
           path: .aedis-platform
           persist-credentials: false
 

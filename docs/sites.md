@@ -31,7 +31,7 @@ Gera um Next.js 16 (App Router, `output: "standalone"`, pnpm) com:
 ```yaml
 jobs:
   aedis:
-    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read, actions: read, packages: read, security-events: write, id-token: write }
     with:
       language: node
@@ -112,7 +112,7 @@ on:
 permissions: {}
 jobs:
   deploy:
-    uses: aedis-build/aedis-platform/.github/workflows/deploy-static.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-static.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read, id-token: write, attestations: write }
     with:
       name: meu-site
@@ -189,7 +189,7 @@ on:
 permissions: {}
 jobs:
   release:
-    uses: aedis-build/aedis-platform/.github/workflows/release-registry-js.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/release-registry-js.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: write, id-token: write, attestations: write }
     with:
       name: meu-registry
@@ -217,7 +217,7 @@ on:
 permissions: {}
 jobs:
   publish:
-    uses: aedis-build/aedis-platform/.github/workflows/release-npm.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/release-npm.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read, id-token: write }
     with:
       package-dir: packages/cli
@@ -228,6 +228,22 @@ No npmjs.com, uma vez por pacote: em *Trusted Publisher*, registre o repositóri
 workflow **chamador** (`cli-release.yml` no exemplo: o npm valida o workflow que iniciou a execução, não o
 reutilizável) e o environment (`npm` por padrão); em *Publishing access*, exija 2FA e não permita tokens. Confirme na
 primeira publicação que a página do pacote mostra a proveniência.
+
+### Tarballs e atestações na GitHub Release: `release-attach.yml`
+
+Depois dos jobs de `release-npm.yml` (um por pacote), um último job anexa à release da tag os tarballs exatamente
+como o npm os recebeu, cada um com o bundle Sigstore (`.tgz.sigstore`) e o `integrity` nas notas, depois de verificar
+cada atestação na API do GitHub e contra o bundle que vai para a release. Quem não alcança o npm instala e audita
+offline: `gh attestation verify <tgz> --owner <org> && npm install ./<tgz>`.
+
+```yaml
+  release:
+    needs: [publish, names]
+    uses: aedis-build/aedis-platform/.github/workflows/release-attach.yml@<sha da tag> # vX.Y.Z
+    permissions: { contents: write }
+    with:
+      title: "@aedis/cli ${{ github.ref_name }}"
+```
 
 ## 7. Regressão visual: `visual-regression.yml`
 
@@ -247,13 +263,13 @@ permissions: {}
 jobs:
   compare:
     if: github.event.action != 'labeled'
-    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read }
     with:
       working-directory: apps/www
   baselines:
     if: github.event.action == 'labeled' && github.event.label.name == 'update-visual-baselines'
-    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha de main>
+    uses: aedis-build/aedis-platform/.github/workflows/visual-regression.yml@<sha da tag> # vX.Y.Z
     permissions: { contents: read }
     with:
       working-directory: apps/www

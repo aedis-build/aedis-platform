@@ -11,7 +11,7 @@ public static partial class NewSiteCommand
     public static Command Create() {
         var name = new Argument<string>("name") { Description = "Nome do site (DNS label; nome do pacote, da imagem e do app no chart)" };
         var org = new Option<string>("--org") { Description = "Organização do GitHub (dona da imagem ghcr.io/<org>/<nome>)", Required = true };
-        var platformRef = new Option<string>("--platform-ref") { Description = "Ref do aedis-platform usada pelo workflow", DefaultValueFactory = _ => "v1" };
+        var platformRef = new Option<string>("--platform-ref") { Description = "Ref do aedis-platform para os workflows (vX.Y.Z, v1 = última release do major, branch ou SHA); gravada como <sha> # <tag>", DefaultValueFactory = _ => "v1" };
         var output = new Option<string?>("--out") { Description = "Diretório de saída (padrão: ./<nome>)" };
         var force = new Option<bool>("--force") { Description = "Sobrescreve arquivos existentes" };
 
@@ -25,7 +25,7 @@ public static partial class NewSiteCommand
                 return 2;
             }
 
-            var files = SiteTemplate.Render(TenantTemplate.ReadEmbedded(SiteTemplate.Prefix), siteName, parse.GetValue(org)!, parse.GetValue(platformRef)!);
+            var files = SiteTemplate.Render(TenantTemplate.ReadEmbedded(SiteTemplate.Prefix), siteName, parse.GetValue(org)!, PlatformPin.Resolve(parse.GetValue(platformRef)!));
             var root = Path.GetFullPath(parse.GetValue(output) ?? siteName);
             var written = TenantTemplate.WriteTo(root, files, parse.GetValue(force));
 

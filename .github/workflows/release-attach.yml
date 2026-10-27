@@ -1,0 +1,83 @@
+# Anexa à GitHub Release os tarballs npm que o release-npm.yml publicou, com suas atestações: baixa os artefatos
+# `npm-*` dos jobs anteriores do caller, verifica cada tarball contra a atestação na API do GitHub e contra o bundle
+# Sigstore que veio ao lado (o mesmo que vai para a release; o gh só lê bundles .json, então a conferência passa por uma
+# cópia), escreve as notas com o `integrity` que o npm mostra e cria ou atualiza a release da tag com os .tgz e os
+# .tgz.sigstore. Assim os mesmos bytes que o npm recebeu podem ser instalados offline e auditados:
+#   gh attestation verify <tgz> --owner <org> && npm install ./<tgz>
+#
+# Caller típico: um job por pacote com release-npm.yml, e este no fim com `needs` em todos.
+# Permissão que o caller concede: contents: write.
+name: release-attach
+
+on:
+  workflow_call:
+    inputs:
+      artifact-pattern:
+        description: Padrão dos artefatos com tarball, .sigstore e .integrity (os que o release-npm sobe)
+        type: string
+        default: npm-*
+      signer-workflow:
+        description: Workflow que atestou os tarballs (--signer-workflow do gh attestation verify)
+        type: string
+        default: aedis-build/aedis-platform/.github/workflows/release-npm.yml
+      title:
+        description: Título da release; vazio usa a tag
+        type: string
+        default: ""
+
+permissions: {}
+
+jobs:
+  attach:
+    name: Attach the tarballs and attestations to the GitHub release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ${{ inputs.artifact-pattern }}
+          merge-multiple: true
+          path: assets
+      - name: Verify every tarball against its attestation from the publish workflow
+        env:
+          REPO: ${{ github.repository }}
+          SIGNER: ${{ inputs.signer-workflow }}
+        run: |
+          set -euo pipefail
+          ls -l assets
+          for tgz in assets/*.tgz; do
+            gh attestation verify "$tgz" -R "$REPO" --signer-workflow "$SIGNER"
+            # O bundle ao lado deve ser o que verifica, não uma cópia velha. O gh só lê bundles .json/.jsonl, então a
+            # conferência passa por uma cópia; o asset mantém o nome .sigstore.
+            cp "$tgz.sigstore" "$RUNNER_TEMP/bundle.json"
+            gh attestation verify "$tgz" -R "$REPO" --bundle "$RUNNER_TEMP/bundle.json" --signer-workflow "$SIGNER"
+          done
+      - name: Release notes with the integrity npm shows
+        env:
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          set -euo pipefail
+          {
+            echo "The npm tarballs of this release, byte for byte what npm received, with their Sigstore attestation (\`<tgz>.sigstore\`)."
+            echo "Verify and install offline: \`gh attestation verify <tgz> --owner $OWNER && npm install ./<tgz>\`. The integrity is the \`sha512-…\` that \`npm view <package> dist.integrity\` shows."
+            echo
+            echo "| Tarball | integrity |"
+            echo "|---|---|"
+            for tgz in assets/*.tgz; do echo "| \`$(basename "$tgz")\` | \`$(cat "$tgz.integrity")\` |"; done
+          } > notes.md
+          cat notes.md
+      - name: GitHub release with the tarballs and bundles
+        env:
+          TITLE: ${{ inputs.title || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --notes-file notes.md --verify-tag
+          else
+            gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --notes-file notes.md
+          fi
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber assets/*.tgz assets/*.tgz.sigstore

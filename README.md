@@ -19,7 +19,7 @@ cobertura de código) em três níveis.
 | `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-static`, `release-registry-js`, `release-npm`, `release-cut`, `visual-regression`; em seguida `promote`) |
 | `.github/actions/dast` | Ação composta: ZAP baseline contra a URL alvo, sumário `dast-summary/v1` e gate com aceites de risco com validade |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |
-| `docs/` | Guias por nuvem, referência do chart, controles de segurança e níveis de conformidade |
+| `docs/` | Guias por nuvem, referência do chart, controles de segurança, níveis de conformidade e [versões e suporte dos workflows](docs/versioning.md) |
 
 ## Como funciona
 
@@ -58,7 +58,7 @@ Sem .NET: `scripts/render-tenant-template.sh` e `scripts/validate-apps.sh` fazem
 | Nível | Resumo |
 |---|---|
 | **L1 Baseline** | baseline de pod, schema, ESO, probes, PDB; Scorecard publicado; cobertura ≥ 60 % |
-| **L2 Hardened** | imagem assinada e pinada por digest, SBOM, Kyverno enforce, NetworkPolicy, PSA restricted, gate SAST; Scorecard ≥ 7; Best Practices silver; cobertura ≥ 75 % |
+| **L2 Hardened** | imagem assinada e pinada por digest, SBOM, Kyverno enforce, NetworkPolicy, PSA restricted, gate SAST, workflows da plataforma pinados em tag de release; Scorecard ≥ 7; Best Practices silver; cobertura ≥ 75 % |
 | **L3 Regulated** | gate DAST, attestation verificada, prod só por PR, drift report, WAF declarado, evidências retidas; Scorecard ≥ 9 (todo check sob controle do processo em 10); Best Practices gold; cobertura ≥ 85 % |
 
 Os níveis são **controles implementados e verificáveis**, não certificação. Detalhes em `docs/conformance.md`.
