@@ -1,5 +1,6 @@
 # Pipeline único de qualidade de um repositório Aedis (.NET ou Node): Conventional Commits, testes com cobertura e
-# gate, Codecov opcional, SAST (Semgrep + regras Aedis), CodeQL, REUSE e DAST opcional contra a app servida. O
+# gate, Codecov opcional, SAST (Semgrep + regras Aedis), CodeQL, REUSE e DAST opcional contra a app servida (action
+# Aedis DAST, aedis-build/aedis-dast). O
 # repositório tem um único caller (.github/workflows/aedis-ci.yml) que chama este workflow pinado por SHA; o conteúdo
 # do pipeline é da plataforma, e o repositório não tira etapas sem mudar o pin (que passa por revisão humana).
 # Ficam fora, por restrição do GitHub ou de segurança: o portão de merge (workflow_run, sempre da versão de main),
@@ -243,7 +244,7 @@ jobs:
           set -euo pipefail
           bash -c "$DAST_START"
           curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
-      - uses: aedis-build/aedis-platform/.github/actions/dast@6b5a4b798354c39f620091ebde885fb0a696978b # main
+      - uses: aedis-build/aedis-dast@79009359fe7e0b4400c35c92c83c72d4f107fd01 # repin to v1.0.0 once released
         with:
           target-url: http://localhost:8080/
           fail-on: ${{ inputs.dast-fail-on }}

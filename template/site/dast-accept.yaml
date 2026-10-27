@@ -1,4 +1,4 @@
-# Aceites de risco do DAST (lidos por .github/actions/dast do Aedis Platform). Cada aceite expira em `until`;
+# Aceites de risco do DAST (lidos pela action aedis-build/aedis-dast). Cada aceite expira em `until`;
 # vencido, volta a bloquear.
 accept: []
 # - pluginId: 10038            # id do plugin do ZAP (coluna "pluginid" do relatório)

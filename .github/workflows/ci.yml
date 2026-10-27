@@ -137,7 +137,7 @@ jobs:
 
   dast:
     if: github.event.action != 'closed'
-    name: DAST (ZAP baseline na imagem de exemplo)
+    name: DAST (action Aedis DAST na imagem de exemplo)
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -150,12 +150,11 @@ jobs:
           set -euo pipefail
           docker build -q -t example-app examples/app
           docker run -d --rm -p 8080:8080 --name example-app example-app
-          curl --retry 10 --retry-connrefused --retry-delay 1 -fsS http://localhost:8080/healthz
-      - uses: ./.github/actions/dast
+          curl --retry 10 --retry-all-errors --retry-delay 1 -fsS http://localhost:8080/healthz
+      - uses: aedis-build/aedis-dast@79009359fe7e0b4400c35c92c83c72d4f107fd01 # repin to v1.0.0 once released
         with:
           target-url: http://localhost:8080/
           accept-file: examples/app/dast-accept.yaml
-      - run: python3 .github/actions/dast/dast-summary.py --self-test
 
   reuse:
     if: github.event.action != 'closed'
@@ -170,7 +169,6 @@ jobs:
       - run: pipx run reuse==5.0.2 lint
       - run: python3 scripts/deps-summary.py --self-test
       - run: python3 scripts/release-notes.py --self-test
-      - run: bash scripts/next-version.sh --self-test
 
   tenant-template:
     if: github.event.action != 'closed'

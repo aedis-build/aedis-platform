@@ -51,7 +51,9 @@ public sealed class PlatformPinTests
                   major:
                     uses: aedis-build/aedis-platform/.github/workflows/validate.yml@v1
                   steps:
-                    - uses: aedis-build/aedis-platform/.github/actions/dast@0123456789abcdef0123456789abcdef01234567
+                    - uses: aedis-build/aedis-dast@0123456789abcdef0123456789abcdef01234567 # v1.0.0
+                    - uses: aedis-build/aedis-release-cut@0123456789abcdef0123456789abcdef01234567 # repin to v1.0.0 once released
+                    - uses: aedis-build/aedis-conformance@v1
                     - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v7.0.1
                 """);
             var offenders = ConformanceChecker.UnreleasedPlatformPins(root);
@@ -59,7 +61,8 @@ public sealed class PlatformPinTests
             offenders.Should().BeEquivalentTo([
                 ".github/workflows/ci.yml:5 @0123456789abcdef0123456789abcdef01234567",
                 ".github/workflows/ci.yml:7 @v1",
-                ".github/workflows/ci.yml:9 @0123456789abcdef0123456789abcdef01234567"
+                ".github/workflows/ci.yml:10 @0123456789abcdef0123456789abcdef01234567",
+                ".github/workflows/ci.yml:11 @v1"
             ]);
             ConformanceChecker.UnreleasedPlatformPins(Path.Combine(root, "sem-workflows")).Should().BeEmpty();
         }
