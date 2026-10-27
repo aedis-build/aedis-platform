@@ -292,7 +292,7 @@ ao branch padrão, o workflow põe uma tag por prefixo de `tag-prefixes` nesse c
 proposto antes da primeira tag: a primeira release é cortada por uma execução manual com `bump` explícito.
 
 Branch, PR e tags saem com o token de curta duração da GitHub App (secrets `app-id` e `app-private-key`, os
-`AEDIS_APP_*` da organização): uma tag empurrada com o `GITHUB_TOKEN` não dispara workflow nenhum.
+`AEDIS_CODER_APP_*` da organização: a App de código, autora confiável; a App do portão só revisa): uma tag empurrada com o `GITHUB_TOKEN` não dispara workflow nenhum.
 
 ```yaml
 # .github/workflows/release-cut.yml
@@ -318,8 +318,8 @@ jobs:
       pin-pattern: "@aedis/cli@"
       lockfile-command: pnpm install --lockfile-only
     secrets:
-      app-id: ${{ secrets.AEDIS_APP_ID }}
-      app-private-key: ${{ secrets.AEDIS_APP_PRIVATE_KEY }}
+      app-id: ${{ secrets.AEDIS_CODER_APP_ID }}
+      app-private-key: ${{ secrets.AEDIS_CODER_APP_PRIVATE_KEY }}
 ```
 
 Um repositório .NET, cuja versão é só a tag, chama o mesmo reutilizável sem `version-files`, só em

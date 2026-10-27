@@ -10,6 +10,9 @@
 # sem ela o job falha) e atestada pelo GitHub (`gh release verify`); a tag maior móvel `v1` (para humanos e docs, nunca
 # num `uses:`); e um pull request `docs(changelog)` que regenera CHANGELOG.md a partir de todas as releases, sempre o
 # mesmo PR, mesclado quando convier (main só recebe PR, então o changelog não é empurrado direto).
+#
+# Tag, release e PR saem como a App de código (Aedis Agent Coder, secrets AEDIS_CODER_APP_*), que está em
+# trustedAuthors; nunca como a App do portão (Aedis Compliance), que é quem revisa e não pode revisar PR própria.
 name: release
 
 on:
@@ -37,8 +40,8 @@ jobs:
     with:
       bump: ${{ inputs.bump || 'auto' }}
     secrets:
-      app-id: ${{ secrets.AEDIS_APP_ID }}
-      app-private-key: ${{ secrets.AEDIS_APP_PRIVATE_KEY }}
+      app-id: ${{ secrets.AEDIS_CODER_APP_ID }}
+      app-private-key: ${{ secrets.AEDIS_CODER_APP_PRIVATE_KEY }}
 
   publish:
     name: GitHub Release imutável e atestada, tag maior, CHANGELOG
@@ -53,8 +56,8 @@ jobs:
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: app
         with:
-          app-id: ${{ secrets.AEDIS_APP_ID }}
-          private-key: ${{ secrets.AEDIS_APP_PRIVATE_KEY }}
+          app-id: ${{ secrets.AEDIS_CODER_APP_ID }}
+          private-key: ${{ secrets.AEDIS_CODER_APP_PRIVATE_KEY }}
           permission-contents: write
           permission-pull-requests: write
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

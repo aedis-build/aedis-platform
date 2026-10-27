@@ -89,6 +89,15 @@ public sealed class MergeGateTests
         MergeGate.Evaluate(MergePolicy.Parse(null), Good()).Checks.Should().Contain(c => c.Id == "author" && c.Detail.Contains("trustedAuthors"));
     }
 
+    [Fact]
+    public void App_do_portao_nao_aprova_pr_propria() {
+        var policy = MergePolicy.Parse(Policy.Replace("[octo]", "[octo, \"aedis-compliance[bot]\"]"));
+        var own = Good() with { Author = "aedis-compliance[bot]" };
+        MergeGate.Evaluate(policy, own, "aedis-compliance[bot]").Checks.Should().Contain(c => c.Id == "self-review" && c.Status == "fail");
+        MergeGate.Evaluate(policy, Good(), "aedis-compliance[bot]").Checks.Should().Contain(c => c.Id == "self-review" && c.Status == "pass");
+        MergeGate.Evaluate(policy, own).Checks.Should().Contain(c => c.Id == "self-review" && c.Status == "pass");
+    }
+
     [Theory]
     [InlineData(".github/**", ".github/workflows/ci.yml", true)]
     [InlineData(".github/**", "src/.github/x", false)]

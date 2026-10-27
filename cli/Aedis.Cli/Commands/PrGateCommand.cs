@@ -49,17 +49,20 @@ public static class PrGateCommand
 
             // A App é quem aprova e quem comenta: o GITHUB_TOKEN do job é só leitura e a organização proíbe que ele aprove.
             GitHubApi? app = null;
+            string? gateLogin = null;
             var id = parse.GetValue(appId) ?? Environment.GetEnvironmentVariable("AEDIS_APP_ID");
             var key = parse.GetValue(appKey) ?? Environment.GetEnvironmentVariable("AEDIS_APP_PRIVATE_KEY");
             if (!string.IsNullOrWhiteSpace(id) && !string.IsNullOrWhiteSpace(key)) {
                 if (File.Exists(key)) key = await File.ReadAllTextAsync(key, cancellationToken);
-                var installationToken = await api.CreateInstallationTokenAsync(orgName, GitHubAppAuth.CreateJwt(id, key), cancellationToken);
+                var jwt = GitHubAppAuth.CreateJwt(id, key);
+                var installationToken = await api.CreateInstallationTokenAsync(orgName, jwt, cancellationToken);
+                gateLogin = await api.GetAppSlugAsync(jwt, cancellationToken) is { } slug ? $"{slug}[bot]" : null;
                 app = new GitHubApi(new HttpClient(handlerFactory?.Invoke() ?? new HttpClientHandler()), installationToken);
             }
 
             // O time de mantenedores só é legível pela App (Members: Read-only); o GITHUB_TOKEN do job não lê a organização.
             var snapshot = await SnapshotAsync(api, orgName, repoName, pull, mergePolicy, cancellationToken, app);
-            var result = MergeGate.Evaluate(mergePolicy, snapshot);
+            var result = MergeGate.Evaluate(mergePolicy, snapshot, gateLogin);
 
             if (result.Decision == "approve" && parse.GetValue(approve)) {
                 if (app is null) {

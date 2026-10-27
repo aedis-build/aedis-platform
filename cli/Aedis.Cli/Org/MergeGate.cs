@@ -106,12 +106,16 @@ public static partial class MergeGate
     public const string CommentMarker = "[aedis-compliance merge gate]";
 
     /// <summary>Avalia a PR.</summary>
-    public static GateResult Evaluate(MergePolicy policy, PullRequestSnapshot pr) {
+    public static GateResult Evaluate(MergePolicy policy, PullRequestSnapshot pr, string? gateLogin = null) {
         var checks = new List<GateCheck>();
         void Add(string id, bool ok, string detail) => checks.Add(new GateCheck(id, ok ? "pass" : "fail", ok ? "" : detail));
 
         Add("author", policy.TrustedAuthors.Count > 0 && policy.TrustedAuthors.Contains(pr.Author, StringComparer.OrdinalIgnoreCase) && !pr.FromFork,
             policy.TrustedAuthors.Count == 0 ? "policy has no trustedAuthors" : pr.FromFork ? "pull request comes from a fork" : $"author '{pr.Author}' is not in trustedAuthors");
+        // Revisor e autor nunca coincidem: uma PR autorada pela própria App do portão (um release-cut com os secrets
+        // da App errada) fica para um humano.
+        Add("self-review", gateLogin is null || !pr.Author.Equals(gateLogin, StringComparison.OrdinalIgnoreCase),
+            $"author '{pr.Author}' is the gate's own App; it cannot review its own pull request");
         Add("draft", !pr.IsDraft, "pull request is a draft");
         Add("title", ConventionalCommit().IsMatch(pr.Title), $"title is not a Conventional Commit: '{pr.Title}'");
         var trailer = pr.CommitMessages.Append(pr.Body).FirstOrDefault(m => ForbiddenTrailer().IsMatch(m));
