@@ -38,6 +38,12 @@ pull request `docs(changelog)` que o próprio `release.yml` abre e atualiza.
   `echo "::warning::deprecated: <o que> is removed in v<N+1>; use <o quê>"` desde a minor que introduz a
   substituição, e a nota da release o lista em *Deprecations*.
 - **Patch para correções**, inclusive de segurança, sem mudança de interface; o Dependabot leva ao caller.
+- **Fallback `v1` no checkout da plataforma**: quando o caller não passa `platform-ref`, os reusables buscam os
+  arquivos da plataforma (regras Semgrep, scripts, CLI, chart) pela tag maior `v1`, a última release do major,
+  compatível por política. Nenhum contexto do GitHub entrega ao reutilizável o commit em que ele foi chamado (numa
+  chamada entre repositórios `job_workflow_sha` e `job_workflow_ref` chegam vazios), então o único override
+  determinístico é o input `platform-ref` com o SHA da tag pinada. O job *Compatibilidade da major* do CI desta
+  plataforma garante que todo caminho que qualquer minor publicada busca nesse checkout continua existindo em `HEAD`.
 
 ## Como um repositório consome
 
