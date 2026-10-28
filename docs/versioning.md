@@ -1,13 +1,18 @@
 # Versões, suporte e publicação dos workflows
 
-Os workflows reutilizáveis (`.github/workflows/*.yml` com `workflow_call`) e as actions compostas
-(`.github/actions/*`) deste repositório são publicados como releases `vX.Y.Z`, e é só por elas que um repositório
-os consome.
+Os workflows reutilizáveis (`.github/workflows/*.yml` com `workflow_call`) deste repositório são publicados como
+releases `vX.Y.Z`, e é só por elas que um repositório os consome. As actions do Aedis no GitHub Marketplace
+([aedis-release-cut](https://github.com/aedis-build/aedis-release-cut), [aedis-dast](https://github.com/aedis-build/aedis-dast),
+[aedis-conformance](https://github.com/aedis-build/aedis-conformance), [aedis-sca](https://github.com/aedis-build/aedis-sca))
+vivem cada uma no seu repositório, com a mesma
+política: `release-cut` a cada push em `main`, release imutável e atestada pelo `release-tag.yml` desta plataforma,
+tag maior móvel, e o consumo só pelo SHA de uma tag `vX.Y.Z`. Esta plataforma as consome assim também
+(`release-cut.yml`, `aedis-ci.yml`, `coverage.yml`, `coverage-js.yml`, `validate.yml`, `conventional-commits.yml`).
 
 ## Versão
 
 Semver derivado dos Conventional Commits desde a release anterior, pelo `release.yml` a cada push em `main`
-(`scripts/next-version.sh`):
+(`next-version.sh` da action aedis-release-cut):
 
 | Commits desde a última tag | Incremento |
 |---|---|
@@ -40,14 +45,17 @@ a tag solta (uma tag pode ser movida por quem tem escrita; o SHA não):
 
 ```yaml
     uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # v1.2.3
-      - uses: aedis-build/aedis-platform/.github/actions/dast@<sha da tag> # v1.2.3
+      - uses: aedis-build/aedis-dast@<sha da tag> # v1.0.0
+      - uses: aedis-build/aedis-release-cut@<sha da tag> # v1.0.0
+      - uses: aedis-build/aedis-conformance@<sha da tag> # v1.0.0
+      - uses: aedis-build/aedis-sca@<sha da tag> # v1.0.0
 ```
 
 Com o `package-ecosystem: github-actions` no `.github/dependabot.yml` (os templates do tenant e do site já o trazem),
 o Dependabot abre o pull request de repin a cada release, SHA e comentário juntos. `aedis platform init` e
 `new-site` já escrevem esse formato (`--platform-ref v1` resolve para a release mais alta do major), e
-`aedis platform validate --level 2` falha (controle PLT-22) quando um `uses:` da plataforma não aponta para o SHA de
-uma tag `vX.Y.Z`.
+`aedis platform validate --level 2` falha (controle PLT-22) quando um `uses:` da plataforma ou de uma das quatro actions
+não aponta para o SHA de uma tag `vX.Y.Z`.
 
 Para quem dá manutenção: a primeira release de um major é cortada à mão (`gh workflow run release -f bump=major`);
 as seguintes saem sozinhas a cada push em `main` que libera algo.

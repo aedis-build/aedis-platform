@@ -1,6 +1,8 @@
 # Exige Conventional Commits em todos os commits da PR e no título da PR (que vira a mensagem do squash).
 # Reutilizável: o repo GitOps do tenant e os repos de app chamam com `uses:`. É a base do versionamento
-# semântico automatizado (release notes e bump de versão derivam dos tipos feat/fix/!).
+# semântico automatizado (release notes e bump de versão derivam dos tipos feat/fix/!). A regra vive numa fonte só,
+# scripts/check-conventional-commits.sh da action Aedis Release Cut (aedis-build/aedis-release-cut), a mesma que
+# decide o que a release-cut libera.
 name: conventional-commits
 
 on:
@@ -9,7 +11,7 @@ on:
   workflow_call:
     inputs:
       platform-ref:
-        description: Ref do aedis-platform de onde vem o script de verificação
+        description: "Ignorado: o script vem do aedis-release-cut. Removido em v2"
         type: string
         default: ""
 
@@ -27,30 +29,21 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Script de verificação (do aedis-platform, quando chamado por outro repo)
-        if: github.repository != 'aedis-build/aedis-platform'
+      - name: Script de verificação (aedis-release-cut)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
-          path: .aedis-platform
+          repository: aedis-build/aedis-release-cut
+          ref: 379a92c16289c4e30cfc3a6d08c45d1ce96b9752 # repin to v1.0.0 once released
+          path: .aedis-release-cut
           persist-credentials: false
 
       - name: Commits da PR
         env:
           BASE: ${{ github.event.pull_request.base.sha }}
           HEAD: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          script=scripts/check-conventional-commits.sh
-          [ -f "$script" ] || script=.aedis-platform/scripts/check-conventional-commits.sh
-          bash "$script" --range "$BASE..$HEAD"
+        run: bash .aedis-release-cut/scripts/check-conventional-commits.sh --range "$BASE..$HEAD"
 
       - name: Título da PR
         env:
           TITLE: ${{ github.event.pull_request.title }}
-        run: |
-          set -euo pipefail
-          script=scripts/check-conventional-commits.sh
-          [ -f "$script" ] || script=.aedis-platform/scripts/check-conventional-commits.sh
-          bash "$script" --message "$TITLE"
+        run: bash .aedis-release-cut/scripts/check-conventional-commits.sh --message "$TITLE"

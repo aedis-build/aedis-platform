@@ -57,7 +57,7 @@ separado porque precisa de permissões de escrita que o CI de toda PR não deve 
 
 `dast-start` é opcional e vale para .NET também: é o comando que constrói e serve a app em `http://localhost:8080`.
 Com ele, o job `dast` instala a toolchain da linguagem, roda o comando, espera a porta responder e chama a action
-`.github/actions/dast` (ZAP baseline) contra `http://localhost:8080/`, com os aceites de `dast-accept.yaml`.
+[Aedis DAST](https://github.com/aedis-build/aedis-dast) (ZAP baseline) contra `http://localhost:8080/`, com os aceites de `dast-accept.yaml`.
 Um aceite pode se limitar a caminhos (`paths`), para um falso positivo numa URL não esconder o mesmo alerta no resto
 do site:
 
@@ -282,7 +282,7 @@ no mesmo commit, e as baselines são regeneradas.
 
 ## 8. Corte de release: `release-cut.yml`
 
-A próxima versão vem dos Conventional Commits desde a última tag (`scripts/next-version.sh`: breaking → major,
+A próxima versão vem dos Conventional Commits desde a última tag (action [Aedis Release Cut](https://github.com/aedis-build/aedis-release-cut): breaking → major,
 `feat` → minor, `fix`/`perf`/`refactor`/`revert`/`build(deps` → patch; o resto não libera). Num repositório cuja
 versão vive em arquivos (`version-files`), cada push no branch padrão propõe um pull request `chore(release): vX.Y.Z`
 que sobe a `version` deles, a dependência exata `pin-dependency` dentro deles, o `version-source` (um fonte com
