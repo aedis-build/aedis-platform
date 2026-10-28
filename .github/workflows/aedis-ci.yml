@@ -1,4 +1,6 @@
 # Pipeline único de qualidade de um repositório Aedis (.NET ou Node): Conventional Commits, testes com cobertura e
+# Os reutilizáveis irmãos são chamados por caminho relativo: o GitHub os resolve no mesmo commit deste workflow, então
+# um caller pinado em vX.Y.Z roda todos na vX.Y.Z (um pin literal apontaria para outra versão da plataforma).
 # gate, Codecov opcional, SAST (Semgrep + regras Aedis), CodeQL, SCA (action Aedis SCA, aedis-build/aedis-sca: Trivy
 # sobre dependências, segredos e misconfiguração), REUSE e DAST opcional contra a app servida (action Aedis DAST,
 # aedis-build/aedis-dast). O
@@ -84,7 +86,7 @@ permissions: {}
 jobs:
   commits:
     if: github.event_name == 'pull_request'
-    uses: aedis-build/aedis-platform/.github/workflows/conventional-commits.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
+    uses: ./.github/workflows/conventional-commits.yml
     permissions:
       contents: read
     with:
@@ -93,7 +95,7 @@ jobs:
 
   coverage:
     if: inputs.language == 'dotnet' && github.event_name != 'schedule'
-    uses: aedis-build/aedis-platform/.github/workflows/coverage.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
+    uses: ./.github/workflows/coverage.yml
     permissions:
       contents: read
       packages: read
@@ -109,7 +111,7 @@ jobs:
 
   coverage-js:
     if: inputs.language == 'node' && github.event_name != 'schedule'
-    uses: aedis-build/aedis-platform/.github/workflows/coverage-js.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
+    uses: ./.github/workflows/coverage-js.yml
     permissions:
       contents: read
       actions: read
@@ -176,7 +178,7 @@ jobs:
           fail_ci_if_error: true
 
   sast:
-    uses: aedis-build/aedis-platform/.github/workflows/sast.yml@6b5a4b798354c39f620091ebde885fb0a696978b # main
+    uses: ./.github/workflows/sast.yml
     permissions:
       contents: read
       security-events: write
