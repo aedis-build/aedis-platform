@@ -95,7 +95,7 @@ jobs:
           private-key: ${{ secrets.app-private-key }}
           permission-contents: write
           permission-pull-requests: write
-      - uses: aedis-build/aedis-release-cut@379a92c16289c4e30cfc3a6d08c45d1ce96b9752 # repin to v1.0.0 once released
+      - uses: aedis-build/aedis-release-cut@73b343a436d16749aa1da5cf93892adf3b58bfc1 # v1.0.1
         if: steps.guard.outputs.enabled == 'true'
         id: cut
         with:

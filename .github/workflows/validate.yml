@@ -54,7 +54,7 @@ jobs:
 
       - name: Render + validação de todos os apps
         id: validate
-        uses: aedis-build/aedis-conformance@d290c60df0ab11364c31d461fecdee2e3f05d7ba # repin to v1.0.0 once released
+        uses: aedis-build/aedis-conformance@db6e99416bb73a0743963be180fc3543096894b8 # v1.0.1
         with:
           # v1 = última release do major; compatível por política (docs/versioning.md); passe platform-ref para fixar um SHA
           platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || 'v1' }}

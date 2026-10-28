@@ -52,10 +52,10 @@ a tag solta (uma tag pode ser movida por quem tem escrita; o SHA não):
 
 ```yaml
     uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # v1.2.3
-      - uses: aedis-build/aedis-dast@<sha da tag> # v1.0.0
-      - uses: aedis-build/aedis-release-cut@<sha da tag> # v1.0.0
-      - uses: aedis-build/aedis-conformance@<sha da tag> # v1.0.0
-      - uses: aedis-build/aedis-sca@<sha da tag> # v1.0.0
+      - uses: aedis-build/aedis-dast@<sha da tag> # v1.0.1
+      - uses: aedis-build/aedis-release-cut@<sha da tag> # v1.0.1
+      - uses: aedis-build/aedis-conformance@<sha da tag> # v1.0.1
+      - uses: aedis-build/aedis-sca@<sha da tag> # v1.0.1
 ```
 
 Com o `package-ecosystem: github-actions` no `.github/dependabot.yml` (os templates do tenant e do site já o trazem),

@@ -81,7 +81,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aedis-build/aedis-sca
-          ref: 516872ee6ede29d8dc92d932175700c1958693c3 # repin to v1.0.0 once released
+          ref: f82449b615839f892dbc142f7f9609b497616d47 # v1.0.1
           path: .aedis-sca
           persist-credentials: false
       - name: Vulnerabilidades conhecidas das dependências
