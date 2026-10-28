@@ -233,7 +233,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: aedis-build/aedis-sca@516872ee6ede29d8dc92d932175700c1958693c3 # repin to v1.0.0 once released
+      - uses: aedis-build/aedis-sca@f82449b615839f892dbc142f7f9609b497616d47 # v1.0.1
         with:
           summary-name: sca-summary
 
@@ -268,7 +268,7 @@ jobs:
           set -euo pipefail
           bash -c "$DAST_START"
           curl --retry 30 --retry-connrefused --retry-delay 2 -fsS -o /dev/null http://localhost:8080/
-      - uses: aedis-build/aedis-dast@79009359fe7e0b4400c35c92c83c72d4f107fd01 # repin to v1.0.0 once released
+      - uses: aedis-build/aedis-dast@90e9b74dc708270b7490f73ea71e70fb8e055b3c # v1.0.1
         with:
           target-url: http://localhost:8080/
           fail-on: ${{ inputs.dast-fail-on }}
