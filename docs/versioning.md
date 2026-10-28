@@ -33,6 +33,7 @@ pull request `docs(changelog)` que o próprio `release.yml` abre e atualiza.
 - **Um major suportado por vez**: o atual. O anterior recebe correções só até a primeira minor do novo.
 - **Quebra de compatibilidade só em major**: remover ou renomear um input, um output, um secret ou um artefato,
   mudar um default que altera o resultado, exigir uma permissão a mais do caller.
+- **Caminhos servidos pela tag `v1` ficam até a v2**: um reusable de uma minor anterior pode resolver a plataforma pela tag maior e buscar um arquivo (ex. `scripts/check-conventional-commits.sh`, que o `aedis-ci` v1.0 pede); mover ou apagar esse arquivo dentro da major é quebra. Fica uma cópia de compatibilidade, marcada como tal, até o próximo major.
 - **Aviso uma minor antes**: o que vai ser removido no próximo major emite, no workflow, um
   `echo "::warning::deprecated: <o que> is removed in v<N+1>; use <o quê>"` desde a minor que introduz a
   substituição, e a nota da release o lista em *Deprecations*.
