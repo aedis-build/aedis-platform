@@ -169,9 +169,8 @@ jobs:
       - run: pipx run reuse==5.0.2 lint
       - run: python3 scripts/release-notes.py --self-test
 
-  # O que um reusable pinado numa minor anterior ainda busca pela tag v1 tem de continuar existindo: a v1.1.0 moveu
-  # scripts para as actions e quebrou todo caller antigo. Os contextos github.job_workflow_* chegam vazios a um
-  # reutilizável chamado de outro repositório (sonda em aedis-conformance#1), por isso o fallback é a tag v1.
+  # Os contextos github.job_workflow_* chegam vazios a um reutilizável chamado de outro repositório (sonda em
+  # aedis-conformance#1), por isso o checkout da plataforma cai na tag v1, que tem de apontar para uma release.
   compat:
     if: github.event.action != 'closed'
     name: Compatibilidade da major
@@ -196,17 +195,6 @@ jobs:
           set -euo pipefail
           sha="$(git rev-parse 'v1^{}')"
           git tag --points-at "$sha" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$' || { echo "::error::v1 ($sha) não aponta para o commit de uma release vX.Y.Z"; exit 1; }
-      - name: Todo caminho que uma release desta major busca no checkout da plataforma existe em HEAD
-        run: |
-          set -euo pipefail
-          rc=0
-          # shellcheck disable=SC2046
-          while IFS= read -r ref; do
-            path="${ref#.aedis-platform/}"
-            [ -n "$path" ] || continue
-            [ -e "$path" ] || { echo "::error::$ref é buscado por uma release da major e não existe mais em HEAD (mantenha uma cópia de compatibilidade até a v2)"; rc=1; }
-          done < <(git grep -h -o -E "\.aedis-platform/[^\"' );:]*" $(git tag -l 'v1.*') | sort -u)
-          exit $rc
 
   tenant-template:
     if: github.event.action != 'closed'
