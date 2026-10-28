@@ -1,7 +1,7 @@
 # Workflow reutilizável: testes .NET com cobertura (coverlet) e gate de limiar/regressão.
 # Produz coverage-summary.json (aedis.platform/coverage-summary/v1) e o relatório Cobertura como artefatos, e
-# deps-summary.json (aedis.platform/deps-summary/v1) com as vulnerabilidades conhecidas das dependências
-# (High/Critical não aceita em deps-accept.yaml falha o job).
+# deps-summary.json (aedis.platform/deps-summary/v2, pelo deps-summary.py da action aedis-build/aedis-sca) com as
+# vulnerabilidades conhecidas das dependências (High/Critical não aceita em deps-accept.yaml falha o job).
 name: coverage
 
 on:
@@ -79,6 +79,14 @@ jobs:
           while IFS= read -r kv; do [ -n "$kv" ] && export "$kv"; done <<< "$TEST_ENV"
           dotnet test "$SOLUTION" -c Release --nologo --collect:"XPlat Code Coverage" --results-directory TestResults
 
+      # O sumário das dependências é o deps-summary.py da action Aedis SCA (uma fonte para Trivy, dotnet e pnpm).
+      - name: Script da action aedis-sca
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aedis-build/aedis-sca
+          ref: 516872ee6ede29d8dc92d932175700c1958693c3 # repin to v1.0.0 once released
+          path: .aedis-sca
+          persist-credentials: false
       - name: Vulnerabilidades conhecidas das dependências
         id: deps
         env:
@@ -86,9 +94,8 @@ jobs:
         run: |
           set -euo pipefail
           dotnet list "$SOLUTION" package --vulnerable --include-transitive --format json > deps.json
-          script=scripts/deps-summary.py; [ -f "$script" ] || script=.aedis-platform/scripts/deps-summary.py
-          accept=""; [ -f deps-accept.yaml ] && accept="--accept deps-accept.yaml"
-          python3 "$script" --input deps.json $accept --out deps-summary.json || echo "deps=fail" >> "$GITHUB_OUTPUT"
+          python3 .aedis-sca/deps-summary.py --input deps.json --accept deps-accept.yaml --out deps-summary.json \
+            || echo "deps=fail" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

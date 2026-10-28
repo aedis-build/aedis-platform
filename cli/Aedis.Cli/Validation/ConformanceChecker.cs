@@ -94,7 +94,8 @@ public static partial class ConformanceChecker
     }
 
     /// <summary>
-    ///     Linhas <c>uses: aedis-build/aedis-platform/...</c> dos workflows do repo que não pinam o SHA de uma tag de
+    ///     Linhas <c>uses: aedis-build/aedis-platform/...</c> e das actions do Aedis (<c>aedis-release-cut</c>, <c>aedis-dast</c>,
+    ///     <c>aedis-conformance</c>, <c>aedis-sca</c>) dos workflows do repo que não pinam o SHA de uma tag de
     ///     release (<c>@&lt;sha&gt; # vX.Y.Z</c>): uma tag solta, uma branch ou um SHA sem a tag no comentário, que o
     ///     Dependabot não acompanha. Vazio quando todos cumprem, ou quando não há workflows.
     /// </summary>
@@ -180,7 +181,7 @@ public static partial class ConformanceChecker
     [GeneratedRegex(@"waf:\s*true")]
     private static partial Regex WafTrue();
 
-    [GeneratedRegex(@"uses:\s*aedis-build/aedis-platform/\S+@(?<ref>\S+)(?:\s+#\s*(?<comment>\S+))?")]
+    [GeneratedRegex(@"uses:\s*aedis-build/aedis-(?:platform/\S+|release-cut|dast|conformance|sca)@(?<ref>\S+)(?:\s+#\s*(?<comment>\S+))?")]
     private static partial Regex PlatformUses();
 
     [GeneratedRegex("^[0-9a-f]{40}$")]

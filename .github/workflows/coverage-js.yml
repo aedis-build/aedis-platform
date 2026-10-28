@@ -2,8 +2,8 @@
 # gate de limiar/regressão do coverage.yml (.NET). O repositório só precisa de um script pnpm que escreva o XML
 # Cobertura; o scripts/coverage-gate.py do aedis-platform lê o XML e produz coverage-summary.json
 # (aedis.platform/coverage-summary/v1), publicado com o XML como artefato coverage-summary. Como o coverage.yml,
-# publica deps-summary.json (aedis.platform/deps-summary/v1) a partir do `pnpm audit` (High/Critical não aceita em
-# deps-accept.yaml falha o job).
+# publica deps-summary.json (aedis.platform/deps-summary/v2, pelo deps-summary.py da action aedis-build/aedis-sca) a
+# partir do `pnpm audit` (High/Critical não aceita em deps-accept.yaml falha o job).
 name: coverage-js
 
 on:
@@ -75,15 +75,22 @@ jobs:
           SCRIPT: ${{ inputs.script }}
         run: pnpm run "$SCRIPT"
 
+      # O sumário das dependências é o deps-summary.py da action Aedis SCA (uma fonte para Trivy, dotnet e pnpm).
+      - name: Script da action aedis-sca
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aedis-build/aedis-sca
+          ref: 516872ee6ede29d8dc92d932175700c1958693c3 # repin to v1.0.0 once released
+          path: .aedis-sca
+          persist-credentials: false
       - name: Vulnerabilidades conhecidas das dependências
         id: deps
         run: |
           set -euo pipefail
           # pnpm audit sai com código != 0 quando acha vulnerabilidade; o gate é do deps-summary.py.
           pnpm audit --json > deps.json || true
-          script=scripts/deps-summary.py; [ -f "$script" ] || script=.aedis-platform/scripts/deps-summary.py
-          accept=""; [ -f deps-accept.yaml ] && accept="--accept deps-accept.yaml"
-          python3 "$script" --input deps.json $accept --out deps-summary.json || echo "deps=fail" >> "$GITHUB_OUTPUT"
+          python3 .aedis-sca/deps-summary.py --input deps.json --accept deps-accept.yaml --out deps-summary.json \
+            || echo "deps=fail" >> "$GITHUB_OUTPUT"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:

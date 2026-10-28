@@ -1,15 +1,17 @@
-# Workflow reutilizável: valida um repo GitOps do Aedis Platform (apps/**, platform/values/**).
+# Workflow reutilizável: valida um repo GitOps do Aedis Platform (apps/**, platform/values/**) com a action Aedis
+# Conformance (aedis-build/aedis-conformance, no Marketplace: `aedis platform validate`, chart e CLI do mesmo commit
+# da plataforma que este workflow) e passa o Trivy config nos manifestos renderizados.
 # Uso no repo do tenant:
 #   jobs:
 #     validate:
-#       uses: aedis-build/aedis-platform/.github/workflows/validate.yml@v1
+#       uses: aedis-build/aedis-platform/.github/workflows/validate.yml@<sha da tag> # vX.Y.Z
 name: validate
 
 on:
   workflow_call:
     inputs:
       platform-ref:
-        description: Ref do aedis-platform de onde vêm o chart e os scripts (tag, branch ou SHA)
+        description: Ref do aedis-platform de onde vêm o chart e a CLI (tag, branch ou SHA); vazio usa o mesmo commit deste workflow
         type: string
         default: ""
       chart:
@@ -23,6 +25,10 @@ on:
       kubernetes-version:
         type: string
         default: "1.31.0"
+      level:
+        description: Nível de conformidade a checar (1, 2 ou 3) além da validação; vazio só valida
+        type: string
+        default: ""
       trivy-severity:
         type: string
         default: HIGH,CRITICAL
@@ -46,41 +52,16 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Checkout do aedis-platform (scripts e chart)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
-          path: .aedis-platform
-          persist-credentials: false
-
-      - name: Instalar helm + kubeconform (binários pinados)
-        run: |
-          set -euo pipefail
-          HELM_VERSION=v3.18.4
-          curl -sSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin --strip-components=1 linux-amd64/helm
-          KUBECONFORM_VERSION=v0.6.7
-          curl -sSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
-            | sudo tar -xz -C /usr/local/bin kubeconform
-          helm version --short && kubeconform -v
-
       - name: Render + validação de todos os apps
         id: validate
-        env:
-          CHART: ${{ inputs.chart }}
-          CHART_VERSION: ${{ inputs.chart-version }}
-          K8S_VERSION: ${{ inputs.kubernetes-version }}
-        run: |
-          set -euo pipefail
-          chart="$CHART"
-          [ -n "$chart" ] || chart=".aedis-platform/charts/aedis-app"
-          mkdir -p rendered
-          if bash .aedis-platform/scripts/validate-apps.sh --chart "$chart" --chart-version "$CHART_VERSION" --out rendered --k8s "$K8S_VERSION"; then
-            echo "result=pass" >> "$GITHUB_OUTPUT"
-          else
-            echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
-          fi
+        uses: aedis-build/aedis-conformance@d290c60df0ab11364c31d461fecdee2e3f05d7ba # repin to v1.0.0 once released
+        with:
+          platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
+          chart: ${{ inputs.chart }}
+          chart-version: ${{ inputs.chart-version }}
+          kubernetes-version: ${{ inputs.kubernetes-version }}
+          level: ${{ inputs.level }}
+          out: rendered
 
       - name: Trivy config (misconfiguração nos manifestos renderizados)
         env:
@@ -90,7 +71,6 @@ jobs:
           VER=0.76.0
           curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${VER}/trivy_${VER}_Linux-64bit.tar.gz" | sudo tar -xz -C /usr/local/bin trivy
           trivy --version
-          rm -f rendered/*.err rendered/*.kubeconform
           trivy config --quiet --severity "$SEVERITY" --exit-code 1 rendered
 
       - name: Publicar sumário
