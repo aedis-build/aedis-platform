@@ -42,7 +42,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: aedis-build/aedis-platform
-          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
+          # v1 = última release do major; compatível por política (docs/versioning.md); passe platform-ref para fixar um SHA
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || 'v1' }}
           path: .aedis-platform
           persist-credentials: false
 
