@@ -39,7 +39,8 @@ JavaScript/TypeScript, além de ClusterFuzzLite e OSS-Fuzz.
 | PLT-14 | DAST na superfície exposta | action [aedis-dast](https://github.com/aedis-build/aedis-dast) | OWASP Top 10, NIST SSDF PW.8 |
 | PLT-15 | Varredura contínua das imagens em uso | `image-scan.yml` | NIST SSDF PW.4, RV.1 |
 | PLT-16 | Detecção de drift em prod | `drift-report.yml` | NIST DE.CM |
-| PLT-22 | Workflows da plataforma e actions do Aedis (`aedis-release-cut`, `aedis-dast`, `aedis-conformance`) pinados no SHA de uma tag de release | `aedis platform validate --level 2`, action [aedis-conformance](https://github.com/aedis-build/aedis-conformance), [versioning.md](versioning.md) | SLSA (dependências pinadas), Scorecard Pinned-Dependencies |
+| PLT-23 | SCA: vulnerabilidades conhecidas das dependências, segredos no repositório e misconfiguração (Dockerfile, manifestos, IaC), com gate e aceites com validade (`deps-accept.yaml`) | action [aedis-sca](https://github.com/aedis-build/aedis-sca) (job `sca` do `aedis-ci.yml`, Trivy, SARIF no code scanning); `dotnet list package --vulnerable` e `pnpm audit` no `coverage.yml`/`coverage-js.yml` pelo mesmo `deps-summary.py` (`deps-summary/v2`) | OWASP A06 (componentes vulneráveis), NIST SSDF PW.4, RV.1, Scorecard Vulnerabilities |
+| PLT-22 | Workflows da plataforma e actions do Aedis (`aedis-release-cut`, `aedis-dast`, `aedis-conformance`, `aedis-sca`) pinados no SHA de uma tag de release | `aedis platform validate --level 2`, action [aedis-conformance](https://github.com/aedis-build/aedis-conformance), [versioning.md](versioning.md) | SLSA (dependências pinadas), Scorecard Pinned-Dependencies |
 
 Mapeamentos completos (OWASP Top 10 2021, OWASP Kubernetes Top 10, NIST CSF 2.0, NIST SSDF, ISO 27001:2022 A.8,
 CIS Kubernetes Benchmark) em `docs/compliance/platform-controls.md` (Fase 5).

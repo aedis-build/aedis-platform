@@ -1,6 +1,7 @@
 rendered/
 *.tgz
 .aedis-platform/
+.aedis-sca/
 bin/
 obj/
 *.user

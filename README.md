@@ -18,7 +18,7 @@ cobertura de código) em três níveis.
 | `scripts/` | `validate-apps.sh` (render + schema + kubeconform + sumário JSON), `render-tenant-template.sh`, `release-notes.py` |
 | `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-static`, `release-registry-js`, `release-npm`, `release-cut`, `release-tag`, `visual-regression`; em seguida `promote`) |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |
-| Actions no Marketplace | Passos que rodam no job do caller, cada um no seu repositório e com a sua release: [Aedis Release Cut](https://github.com/marketplace/actions/aedis-release-cut) ([aedis-release-cut](https://github.com/aedis-build/aedis-release-cut): corte de versão por Conventional Commits, tag ou PR de release, com os scripts `next-version.sh` e `check-conventional-commits.sh`), [Aedis DAST](https://github.com/marketplace/actions/aedis-dast) ([aedis-dast](https://github.com/aedis-build/aedis-dast): ZAP por caminho ou contrato OpenAPI, Nuclei, autenticação, borda, sumário `dast-summary/v2`, aceites com validade e `paths`) e [Aedis Conformance](https://github.com/marketplace/actions/aedis-conformance) ([aedis-conformance](https://github.com/aedis-build/aedis-conformance): `aedis platform validate --level N` e `aedis org audit`). Os builders de release continuam reutilizáveis (SLSA Build L3 exige o job isolado do caller) |
+| Actions no Marketplace | Passos que rodam no job do caller, cada um no seu repositório e com a sua release: [Aedis Release Cut](https://github.com/marketplace/actions/aedis-release-cut) ([aedis-release-cut](https://github.com/aedis-build/aedis-release-cut): corte de versão por Conventional Commits, tag ou PR de release, com os scripts `next-version.sh` e `check-conventional-commits.sh`), [Aedis DAST](https://github.com/marketplace/actions/aedis-dast) ([aedis-dast](https://github.com/aedis-build/aedis-dast): ZAP por caminho ou contrato OpenAPI, Nuclei, autenticação, borda, sumário `dast-summary/v2`, aceites com validade e `paths`) e [Aedis Conformance](https://github.com/marketplace/actions/aedis-conformance) ([aedis-conformance](https://github.com/aedis-build/aedis-conformance): `aedis platform validate --level N` e `aedis org audit`) e [Aedis SCA](https://github.com/marketplace/actions/aedis-sca) ([aedis-sca](https://github.com/aedis-build/aedis-sca): Trivy sobre dependências, segredos e misconfiguração, sumário `deps-summary/v2`, SARIF no code scanning, aceites com validade e `paths`; o seu `deps-summary.py` também lê `dotnet list package` e `pnpm audit`). Os builders de release continuam reutilizáveis (SLSA Build L3 exige o job isolado do caller) |
 | `docs/` | Guias por nuvem, referência do chart, controles de segurança, níveis de conformidade, [versões e suporte dos workflows](docs/versioning.md) e o [perfil enterprise](docs/enterprise.md) (GitHub Enterprise Cloud, repositório privado) |
 
 ## Como funciona
@@ -118,10 +118,11 @@ A régua pede evidência, não só configuração: assets da última release (as
 em bestpractices.dev e o sumário JSON da run mais recente do branch padrão (`coverage-summary`, `sast-summary`,
 `dast-summary`) com `result: pass`. Cada item carrega as categorias do OSPS Baseline que cobre. O comando também grava
 `badge.json` e `badges/<repo>.json` no formato endpoint do shields.io
-(`https://img.shields.io/endpoint?url=<url do json>`) para o README mostrar o nível alcançado. O `coverage.yml`
-(e o `coverage-js.yml`, via `pnpm audit`) também publica `deps-summary.json` (`aedis.platform/deps-summary/v1`:
-vulnerabilidades conhecidas das dependências,
-gate em High/Critical com aceites em `deps-accept.yaml`), e o `build-image.yml` emite a atestação de proveniência do
+(`https://img.shields.io/endpoint?url=<url do json>`) para o README mostrar o nível alcançado. O job `sca` do
+`aedis-ci.yml` (action aedis-sca, Trivy) publica `sca-summary`, e o `coverage.yml` (e o `coverage-js.yml`, via
+`pnpm audit`) publica `deps-summary.json` (`aedis.platform/deps-summary/v2`, pelo mesmo `deps-summary.py` da
+action: vulnerabilidades conhecidas das dependências, gate em High/Critical com aceites em `deps-accept.yaml`), e o
+`build-image.yml` emite a atestação de proveniência do
 GitHub e a verifica com `gh attestation verify` antes de declarar sucesso.
 
 O `release-nuget.yml` gera as notas de cada release com `scripts/release-notes.py`: a partir dos Conventional
