@@ -21,7 +21,7 @@ Semver derivado dos Conventional Commits desde a release anterior, pelo `release
 | `fix`, `perf`, `refactor`, `revert`, `build(deps)` | patch |
 | só `docs`, `ci`, `chore`, `test`, `style` | nenhuma release |
 
-Uma release é: a tag `vX.Y.Z`; a GitHub Release com as notas geradas dos commits (impacto da atualização primeiro,
+Uma release é: a tag `vX.Y.Z`; a GitHub Release (`release-tag.yml`, reutilizável) com as notas geradas dos commits (impacto da atualização primeiro,
 depois features, correções, dependências), **imutável** (a tag não se move e os assets não mudam depois de
 publicada; configuração do repositório, conferida pelo workflow) e **atestada** pelo GitHub
 (`gh release verify vX.Y.Z -R aedis-build/aedis-platform`); e a tag maior `v1`, movida para a última release do

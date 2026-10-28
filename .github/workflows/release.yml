@@ -5,11 +5,11 @@
 # abrir o repin sozinho. A primeira tag sai de uma execução manual com bump explícito; depois, só o que libera (feat,
 # fix, deps, breaking) gera tag.
 #
-# Em cima da tag, o job publish: GitHub Release com as notas geradas dos Conventional Commits (scripts/release-notes.py),
-# conferida como imutável (a configuração "immutable releases" do repositório impede mover a tag ou trocar os assets;
-# sem ela o job falha) e atestada pelo GitHub (`gh release verify`); a tag maior móvel `v1` (para humanos e docs, nunca
-# num `uses:`); e um pull request `docs(changelog)` que regenera CHANGELOG.md a partir de todas as releases, sempre o
-# mesmo PR, mesclado quando convier (main só recebe PR, então o changelog não é empurrado direto).
+# Em cima da tag, o release-tag.yml (reutilizável, o mesmo que as actions do Aedis chamam): GitHub Release com as
+# notas geradas dos Conventional Commits (scripts/release-notes.py), conferida como imutável e atestada pelo GitHub
+# (`gh release verify`); a tag maior móvel `v1` (para humanos e docs, nunca num `uses:`); e um pull request
+# `docs(changelog)` que regenera CHANGELOG.md a partir de todas as releases, sempre o mesmo PR, mesclado quando
+# convier (main só recebe PR, então o changelog não é empurrado direto).
 #
 # Tag, release e PR saem como a App de código (Aedis Agent Coder, secrets AEDIS_CODER_APP_*), que está em
 # trustedAuthors; nunca como a App do portão (Aedis Compliance), que é quem revisa e não pode revisar PR própria.
@@ -44,91 +44,13 @@ jobs:
       app-private-key: ${{ secrets.AEDIS_CODER_APP_PRIVATE_KEY }}
 
   publish:
-    name: GitHub Release imutável e atestada, tag maior, CHANGELOG
     needs: cut
     if: needs.cut.outputs.tag != ''
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/release-tag.yml
     permissions:
       contents: read
-    env:
-      TAG: ${{ needs.cut.outputs.tag }}
-    steps:
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
-        id: app
-        with:
-          app-id: ${{ secrets.AEDIS_CODER_APP_ID }}
-          private-key: ${{ secrets.AEDIS_CODER_APP_PRIVATE_KEY }}
-          permission-contents: write
-          permission-pull-requests: write
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ needs.cut.outputs.tag }}
-          fetch-depth: 0
-          token: ${{ steps.app.outputs.token }}
-          persist-credentials: true
-      - name: Git identity (the App's bot user)
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-          SLUG: ${{ steps.app.outputs.app-slug }}
-        run: |
-          set -euo pipefail
-          id="$(gh api "users/${SLUG}[bot]" --jq .id)"
-          git config user.name "${SLUG}[bot]"
-          git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
-      - name: Release notes from the Conventional Commits since the previous tag
-        run: |
-          set -euo pipefail
-          previous="$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*' "$TAG^" 2>/dev/null || true)"
-          range="$TAG"; [ -n "$previous" ] && range="$previous..$TAG"
-          python3 scripts/release-notes.py --repo "$GITHUB_REPOSITORY" --tag "$TAG" --range "$range" --out "$RUNNER_TEMP/notes.md"
-          cat "$RUNNER_TEMP/notes.md"
-      - name: GitHub Release
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: |
-          set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then echo "release $TAG exists"; exit 0; fi
-          gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
-      # Imutável: a tag não pode ser movida nem os assets trocados depois de publicada. É configuração do repositório
-      # (Settings → General → Releases), não deste workflow; sem ela a publicação não é a oficial, e o job diz isso.
-      - name: The release is immutable and GitHub's attestation of it verifies
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: |
-          set -euo pipefail
-          test "$(gh release view "$TAG" --json isImmutable --jq .isImmutable)" = true \
-            || { echo "::error::release $TAG is not immutable: enable immutable releases in the repository settings (Settings → General → Releases)"; exit 1; }
-          # A atestação é emitida logo depois da publicação; espera-se por ela.
-          for _ in $(seq 1 12); do gh release verify "$TAG" && exit 0; sleep 10; done
-          echo "::error::no valid attestation for release $TAG after two minutes"; exit 1
-      # v1 acompanha a última release do major: um atalho para humanos e docs; um `uses:` pina o SHA da tag vX.Y.Z.
-      - name: Move the major tag
-        run: |
-          set -euo pipefail
-          major="${TAG%%.*}"
-          git tag -fa "$major" -m "$major → $TAG" "$TAG^{}"
-          git push --force origin "refs/tags/$major"
-          echo "$major → $TAG"
-      - name: CHANGELOG.md from every release, as one standing pull request
-        env:
-          GH_TOKEN: ${{ steps.app.outputs.token }}
-        run: |
-          set -euo pipefail
-          git checkout -q -B changelog origin/main
-          {
-            echo "# Changelog"
-            echo
-            echo "Generated by release.yml from the notes of every [release](https://github.com/$GITHUB_REPOSITORY/releases); do not edit by hand."
-            echo
-            # gh release list has no body field; the REST list has it (its first line repeats "## vX.Y.Z", dropped).
-            gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
-              --jq '.[] | select(.draft | not) | "## \(.tag_name) (\(.published_at[:10]))\n\n\(.body | sub("^## [^\n]*\n+"; ""))\n"'
-          } > CHANGELOG.md
-          git add CHANGELOG.md
-          if git diff --cached --quiet; then echo "CHANGELOG.md unchanged"; exit 0; fi
-          git commit -q -s -m "docs(changelog): $TAG"
-          git push -q --force origin HEAD:refs/heads/changelog
-          number="$(gh pr list --head changelog --base main --state open --json number --jq '.[0].number')"
-          body="CHANGELOG.md regenerated by release.yml from the notes of every release, last $TAG. Merge whenever convenient: the next release updates this same pull request."
-          if [ -n "$number" ]; then gh pr edit "$number" --title "docs(changelog): $TAG" --body "$body"
-          else gh pr create --head changelog --base main --title "docs(changelog): $TAG" --body "$body"; fi
+    with:
+      tag: ${{ needs.cut.outputs.tag }}
+    secrets:
+      app-id: ${{ secrets.AEDIS_CODER_APP_ID }}
+      app-private-key: ${{ secrets.AEDIS_CODER_APP_PRIVATE_KEY }}

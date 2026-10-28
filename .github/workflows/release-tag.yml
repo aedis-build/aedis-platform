@@ -1,0 +1,135 @@
+# Publicação de uma tag já empurrada (pelo release-cut.yml, ou à mão): GitHub Release com as notas geradas dos
+# Conventional Commits desde a tag anterior (scripts/release-notes.py), conferida como imutável (a configuração
+# "immutable releases" do repositório impede mover a tag ou trocar os assets; sem ela o job falha) e atestada pelo
+# GitHub (`gh release verify`); a tag maior móvel (`v1` para `v1.2.3`, `cli-v1` para `cli-v1.2.3`), para humanos e
+# docs, nunca num `uses:`; e um pull request `docs(changelog)` que regenera CHANGELOG.md a partir de todas as
+# releases, sempre o mesmo PR, mesclado quando convier (o branch padrão só recebe PR).
+#
+# Release, tag maior e PR saem como a App de código do caller (secrets app-id e app-private-key: a App que está em
+# trustedAuthors, ex. Aedis Agent Coder; nunca a App do portão, que revisa). Permissão que o caller concede:
+# contents: read (quem escreve é a App). Esta plataforma e as actions do Aedis (aedis-release-cut, aedis-dast,
+# aedis-conformance) chamam-no depois do release-cut.yml.
+name: release-tag
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag já existente no repositório a publicar (ex. v1.2.3, cli-v1.2.3)
+        type: string
+        required: true
+      platform-ref:
+        description: Commit/tag do aedis-platform de onde vem release-notes.py; vazio usa o mesmo commit deste workflow
+        type: string
+        default: ""
+    secrets:
+      app-id:
+        required: true
+      app-private-key:
+        required: true
+
+permissions: {}
+
+jobs:
+  publish:
+    name: GitHub Release imutável e atestada, tag maior, CHANGELOG
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      TAG: ${{ inputs.tag }}
+      DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          app-id: ${{ secrets.app-id }}
+          private-key: ${{ secrets.app-private-key }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+          # O token da App fica no checkout para os pushes abaixo; expira em uma hora.
+          persist-credentials: true
+      - name: Scripts do aedis-platform (quando chamado por outro repositório)
+        if: github.repository != 'aedis-build/aedis-platform'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: aedis-build/aedis-platform
+          ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || github.job_workflow_sha }}
+          path: .aedis-platform
+          persist-credentials: false
+      - name: Git identity (the App's bot user)
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          SLUG: ${{ steps.app.outputs.app-slug }}
+        run: |
+          set -euo pipefail
+          id="$(gh api "users/${SLUG}[bot]" --jq .id)"
+          git config user.name "${SLUG}[bot]"
+          git config user.email "${id}+${SLUG}[bot]@users.noreply.github.com"
+          # The platform checkout is a nested repository: excluded, so no commit below can pick it up as a gitlink.
+          echo .aedis-platform >> .git/info/exclude
+      - name: Release notes from the Conventional Commits since the previous tag
+        run: |
+          set -euo pipefail
+          script=scripts/release-notes.py; [ -f "$script" ] || script=.aedis-platform/scripts/release-notes.py
+          # The tag may carry any prefix (v1.2.3, cli-v1.2.3): the previous one has the same prefix.
+          prefix="${TAG%%[0-9]*}"
+          previous="$(git describe --tags --abbrev=0 --match "${prefix}[0-9]*.[0-9]*.[0-9]*" "$TAG^" 2>/dev/null || true)"
+          range="$TAG"; [ -n "$previous" ] && range="$previous..$TAG"
+          python3 "$script" --repo "$GITHUB_REPOSITORY" --tag "$TAG" --range "$range" --out "$RUNNER_TEMP/notes.md"
+          cat "$RUNNER_TEMP/notes.md"
+      - name: GitHub Release
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then echo "release $TAG exists"; exit 0; fi
+          gh release create "$TAG" --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+      # Imutável: a tag não pode ser movida nem os assets trocados depois de publicada. É configuração do repositório
+      # (Settings → General → Releases), não deste workflow; sem ela a publicação não é a oficial, e o job diz isso.
+      - name: The release is immutable and GitHub's attestation of it verifies
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          test "$(gh release view "$TAG" --json isImmutable --jq .isImmutable)" = true \
+            || { echo "::error::release $TAG is not immutable: enable immutable releases in the repository settings (Settings → General → Releases)"; exit 1; }
+          # A atestação é emitida logo depois da publicação; espera-se por ela.
+          for _ in $(seq 1 12); do gh release verify "$TAG" && exit 0; sleep 10; done
+          echo "::error::no valid attestation for release $TAG after two minutes"; exit 1
+      # v1 acompanha a última release do major: um atalho para humanos e docs; um `uses:` pina o SHA da tag vX.Y.Z.
+      - name: Move the major tag
+        run: |
+          set -euo pipefail
+          major="${TAG%%.*}"
+          git tag -fa "$major" -m "$major → $TAG" "$TAG^{}"
+          git push --force origin "refs/tags/$major"
+          echo "$major → $TAG"
+      - name: CHANGELOG.md from every release, as one standing pull request
+        env:
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+        run: |
+          set -euo pipefail
+          git checkout -q -B changelog "origin/$DEFAULT_BRANCH"
+          {
+            echo "# Changelog"
+            echo
+            echo "Generated by release-tag.yml (aedis-platform) from the notes of every [release](https://github.com/$GITHUB_REPOSITORY/releases); do not edit by hand."
+            echo
+            # gh release list has no body field; the REST list has it (its first line repeats "## vX.Y.Z", dropped).
+            gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --paginate \
+              --jq '.[] | select(.draft | not) | "## \(.tag_name) (\(.published_at[:10]))\n\n\(.body | sub("^## [^\n]*\n+"; ""))\n"'
+          } > CHANGELOG.md
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then echo "CHANGELOG.md unchanged"; exit 0; fi
+          git commit -q -s -m "docs(changelog): $TAG"
+          git push -q --force origin HEAD:refs/heads/changelog
+          number="$(gh pr list --head changelog --base "$DEFAULT_BRANCH" --state open --json number --jq '.[0].number')"
+          body="CHANGELOG.md regenerated by release-tag.yml (aedis-platform) from the notes of every release, last $TAG. Merge whenever convenient: the next release updates this same pull request."
+          if [ -n "$number" ]; then gh pr edit "$number" --title "docs(changelog): $TAG" --body "$body"
+          else gh pr create --head changelog --base "$DEFAULT_BRANCH" --title "docs(changelog): $TAG" --body "$body"; fi
