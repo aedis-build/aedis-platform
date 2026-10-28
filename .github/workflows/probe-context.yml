@@ -1,0 +1,26 @@
+# Sonda temporária: imprime, de dentro de um reutilizável chamado por SHA de outro repositório, os campos do contexto
+# github que podem identificar o commit deste arquivo. Branch descartável; não mesclar.
+name: probe-context
+
+on:
+  workflow_call:
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          JOB_WORKFLOW_SHA: ${{ github.job_workflow_sha }}
+          JOB_WORKFLOW_REF: ${{ github.job_workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          SHA: ${{ github.sha }}
+        run: |
+          echo "job_workflow_sha=[$JOB_WORKFLOW_SHA]"
+          echo "job_workflow_ref=[$JOB_WORKFLOW_REF]"
+          echo "workflow_sha=[$WORKFLOW_SHA]"
+          echo "workflow_ref=[$WORKFLOW_REF]"
+          echo "sha=[$SHA]"
+          env | grep -iE '^GITHUB_(JOB_)?WORKFLOW' || true
