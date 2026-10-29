@@ -271,26 +271,26 @@ aplica juntas.
 ### Infra da Cloudflare como código
 
 A zona onde o site é servido tem a sua postura de segurança no módulo Terraform
-[`infra/cloudflare`](../infra/cloudflare/README.md) (provider `cloudflare/cloudflare` v5): TLS mínimo 1.2, Always Use
-HTTPS e HSTS; Bot Fight Mode ligado por padrão e política de IA por comportamento (busca e agentes liberados, treino
-bloqueado), dois controles separados; uma regra customizada que só aceita `GET`, `HEAD` e `POST` nos hostnames, mais as
-suas até o limite do plano (5 no Free); rate limit por IP com Managed Challenge (ou Block), que no Free é uma regra só:
-o `POST` das rotas de formulário (3 por 10 s) ou, sem formulário, um limite geral nos hostnames (100 por 10 s); no Pro,
-as duas regras, o Cloudflare Managed Ruleset e o OWASP Core; Turnstile, Email Routing e buckets R2 (dev URL desligado)
-quando pedidos; uma CDN servida de um bucket R2 por domínio próprio (`cdn`), com regras de métodos e hotlink e
-cabeçalhos de segurança no ruleset único de cabeçalhos de resposta da zona, que também leva os extras de
-`response_headers`. O custo do Bot Fight Mode para monitores e para a CSP de hashes está no README do módulo.
+[`infra/cloudflare`](../infra/cloudflare/README.md) (provider `cloudflare/cloudflare` v5). Cada site, API ou CDN da zona
+entra em `workloads` como uma declaração de intenção (`type`, `hostnames`, `forms`, `turnstile`, `headers`, `rules`), a
+mesma estrutura que o módulo de outro provedor recebe; toda regra gerada fica restrita aos hostnames do workload. A zona
+leva o resto: TLS mínimo 1.2, Always Use HTTPS e HSTS; Bot Fight Mode ligado por padrão e política de IA por
+comportamento (busca e agentes liberados, treino bloqueado); uma regra de métodos por tipo de workload; rate limit por
+IP com Managed Challenge (ou Block); no Pro, o Cloudflare Managed Ruleset e o OWASP Core; Email Routing e buckets R2 (dev
+URL desligado) quando pedidos. Regras customizadas e de rate limit são da zona (Free: 5 e 1; Pro: 20 e 2): o plan soma o
+que todos os workloads pedem e diz quem consome o quê quando passa do teto, e os `forms` de todos os workloads cabem
+numa regra de rate limit só. O custo do Bot Fight Mode para monitores e para a CSP de hashes está no README do módulo.
 
 ```hcl
 # infra/cloudflare/main.tf no repositório do site
 module "zone" {
   source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=<sha da tag>" # vX.Y.Z
 
-  zone_name  = "meu-site.example"
-  plan       = "free"
-  hostnames  = ["meu-site.example"]
-  form_paths = ["/api/contato"] # sem formulário: [] explícito
-  turnstile  = {}
+  zone_name = "meu-site.example"
+  plan      = "free"
+  workloads = {
+    site = { type = "site-ssr", hostnames = ["meu-site.example"], forms = ["/api/contato"], turnstile = true }
+  }
 }
 ```
 
@@ -304,17 +304,18 @@ Quem aplica é o dono da zona, com um token só para isso (escopos, `terraform i
 backend opcional em R2 no [README do módulo](../infra/cloudflare/README.md)). O CI da plataforma roda
 `terraform fmt -check`, `validate` e `test` (provider simulado) no módulo e nos exemplos, sem credenciais.
 
-O `aedis platform validate --level 3` cobra o módulo de um site na Cloudflare (PLT-20, `waf-declared-prod`): com um
+O `aedis platform validate --level 3` cobra o módulo de um site na Cloudflare (PLT-20, `waf-declared-prod`). Para cada
 `wrangler.jsonc` de produção (rota `custom_domain`) na raiz ou em `apps/*/`, exige `workers_dev: false` e
-`preview_urls: false` e um `infra/cloudflare/*.tf` com o módulo cujo `form_paths` cobre toda rota de formulário do
-site (route handler do Next com `POST`), ou `form_paths = []` quando não há nenhuma.
+`preview_urls: false`, que cada custom domain pertença aos `hostnames` de um workload declarado em
+`infra/cloudflare/*.tf` e que toda rota de formulário do site (route handler do Next com `POST`) esteja no `forms` desse
+workload. As mensagens dizem o arquivo, o env e o hostname.
 
 ## 4. O que L3 significa para um site
 
 | Exigência | Como o site a cumpre |
 |---|---|
 | DAST sem alerta alto não aceito | ZAP baseline contra o site servido em todo PR (`dast-start`); aceites com validade em `dast-accept.yaml` |
-| WAF declarado em produção | no cluster, `ingress.edge.waf: true` no `env/prod.yaml`; na Cloudflare, o módulo `infra/cloudflare` com o rate limit nas rotas de formulário; a conformidade (`waf-declared-prod`) recusa um site exposto sem a declaração |
+| WAF declarado em produção | no cluster, `ingress.edge.waf: true` no `env/prod.yaml`; na Cloudflare, o módulo `infra/cloudflare` com um workload por domínio e as rotas de formulário em `forms`; a conformidade (`waf-declared-prod`) recusa um site exposto sem a declaração |
 | Cabeçalhos de segurança | emitidos pela própria app em `proxy.ts` (CSP com nonce, HSTS, nosniff, sem framing, sem vazamento de referrer, `Cache-Control: no-store` nas páginas); a borda pode reforçar, não substituir |
 | Cobertura ≥ 85 % linhas / 70 % branches, sem regressão | `vitest --coverage` com reporter Cobertura e o gate do `coverage-js.yml` |
 | Fuzzing | testes baseados em propriedades com fast-check |

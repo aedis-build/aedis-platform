@@ -14,36 +14,16 @@ variable "plan" {
   }
 }
 
-variable "hostnames" {
-  description = "Hostnames servidos pelos Workers da zona (os custom domains do wrangler.jsonc); as regras valem só para eles."
-  type        = list(string)
-
-  validation {
-    condition     = length(var.hostnames) > 0
-    error_message = "hostnames precisa de pelo menos um hostname."
-  }
-}
-
-variable "form_paths" {
-  description = "Rotas que recebem POST de formulário (ex. /api/proposals), cobertas pelo rate limit. Sem formulário, [] explícito."
-  type        = list(string)
-
-  validation {
-    condition     = alltrue([for p in var.form_paths : startswith(p, "/")])
-    error_message = "cada form_path começa com /."
-  }
-}
-
 variable "form_requests_per_period" {
-  description = "POSTs por IP aceitos nas form_paths a cada período (10 s no free, 60 s no pro) antes da ação do rate limit."
+  description = "POSTs por IP aceitos nas rotas de forms dos workloads a cada período (10 s no free, 60 s no pro)."
   type        = number
   default     = 3
 }
 
 variable "site_requests_per_period" {
   description = <<-EOT
-    Limite geral: requisições por IP a cada 10 s nos hostnames (todas as rotas e métodos, fora bots verificados). É a
-    regra do Free quando form_paths = []; no Pro vale sempre. 100 = 10 req/s sustentados, folga para a primeira carga
+    Limite geral: requisições por IP a cada 10 s nos hostnames dos workloads que não são cdn (todas as rotas e métodos,
+    fora bots verificados). É a regra do Free quando nenhum workload tem forms; no Pro vale sempre. 100 = 10 req/s sustentados, folga para a primeira carga
     de uma página (HTML, chunks, CSS, fontes, imagens e prefetch de links) e para vários visitantes atrás do mesmo NAT.
   EOT
   type        = number
@@ -88,7 +68,7 @@ variable "ai_bots" {
 }
 
 variable "custom_rules" {
-  description = "Regras customizadas de WAF além da regra de métodos do módulo; o total respeita o plano (5 no free, 20 no pro)."
+  description = "Regras de WAF da zona inteira (as de um site vão em workloads[*].rules); o total da zona respeita o plano (5 no free, 20 no pro)."
   type = list(object({
     description = string
     expression  = string
@@ -96,15 +76,6 @@ variable "custom_rules" {
     ref         = optional(string)
   }))
   default = []
-}
-
-variable "turnstile" {
-  description = "Widget do Turnstile para os hostnames; null = sem widget."
-  type = object({
-    name = optional(string)
-    mode = optional(string, "managed")
-  })
-  default = null
 }
 
 variable "email_routing" {
@@ -134,38 +105,60 @@ variable "r2_buckets" {
   default     = []
 }
 
-variable "cdn" {
+variable "workloads" {
   description = <<-EOT
-    CDNs servidas direto de um bucket R2 por domínio próprio, sem Worker. Para cada uma: o bucket (com o dev URL
-    r2.dev desligado), o domínio próprio na zona, duas regras no ruleset custom (só GET e HEAD; hotlink: Referer vazio
-    ou de allowed_referers e subdomínios passa, o resto leva block) e os cabeçalhos de segurança da CDN, com headers
-    sobrepondo ou somando. manage_domain = false deixa o domínio fora do Terraform (o provider não o importa).
+    Declaração de intenção de cada site ou API da zona, uma chave por workload; a mesma estrutura serve ao módulo de
+    outro provedor. O módulo não cria Worker nem domínio de Worker: o wrangler e o deploy-site seguem donos deles.
+      type        site-static (GET e HEAD), site-ssr (mais POST), api (mais PUT, PATCH, DELETE e OPTIONS) ou cdn
+                  (bucket R2 servido por domínio próprio, GET e HEAD)
+      hostnames   os hostnames do workload; toda regra gerada fica restrita a eles
+      forms       rotas que recebem POST (rate limit); só site-ssr e api
+      turnstile   um widget do Turnstile para os hostnames; não vale para cdn
+      headers     cabeçalhos de resposta (na cdn, sobrepõem ou somam aos de segurança padrão)
+      rules       regras de WAF só deste workload (a expressão é combinada com os hostnames)
+      bucket, allowed_referers, manage_domain   só cdn: bucket R2, domínios cujo Referer passa no hotlink e se o
+                  domínio próprio do R2 é do Terraform (o provider não o importa)
   EOT
-  type = list(object({
-    hostname         = string
-    bucket           = string
-    allowed_referers = list(string)
-    headers          = optional(map(string), {})
+  type = map(object({
+    type      = string
+    hostnames = list(string)
+    forms     = optional(list(string), [])
+    turnstile = optional(bool, false)
+    headers   = optional(map(string), {})
+    rules = optional(list(object({
+      description = string
+      expression  = string
+      action      = string
+      ref         = optional(string)
+    })), [])
+    bucket           = optional(string)
+    allowed_referers = optional(list(string), [])
     manage_domain    = optional(bool, true)
   }))
-  default = []
+  default = {}
 
   validation {
-    condition     = alltrue(flatten([for c in var.cdn : [for d in c.allowed_referers : can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$", d))]]))
+    condition     = alltrue([for w in values(var.workloads) : contains(["site-static", "site-ssr", "api", "cdn"], w.type) && length(w.hostnames) > 0])
+    error_message = "cada workload tem type site-static, site-ssr, api ou cdn e pelo menos um hostname."
+  }
+
+  validation {
+    condition     = length(flatten([for w in values(var.workloads) : w.hostnames])) == length(distinct(flatten([for w in values(var.workloads) : w.hostnames])))
+    error_message = "um hostname pertence a um workload só."
+  }
+
+  validation {
+    condition     = alltrue([for w in values(var.workloads) : (length(w.forms) == 0 || contains(["site-ssr", "api"], w.type)) && alltrue([for p in w.forms : startswith(p, "/")])])
+    error_message = "forms só em workloads site-ssr ou api (um export estático e uma cdn não recebem POST), e cada rota começa com /."
+  }
+
+  validation {
+    condition     = alltrue([for w in values(var.workloads) : w.type == "cdn" ? (w.bucket != null && !w.turnstile) : (w.bucket == null && length(w.allowed_referers) == 0)])
+    error_message = "workload cdn exige bucket e não tem turnstile; bucket e allowed_referers são só de cdn."
+  }
+
+  validation {
+    condition     = alltrue(flatten([for w in values(var.workloads) : [for d in w.allowed_referers : can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$", d))]]))
     error_message = "allowed_referers são domínios (ex. aedis.build), sem esquema, caminho nem curinga."
   }
-}
-
-variable "response_headers" {
-  description = <<-EOT
-    Cabeçalhos de resposta extras, por expressão, no mesmo ruleset da fase http_response_headers_transform que leva os
-    da CDN: a fase tem um ruleset só por zona, então todo cabeçalho de resposta da zona passa por aqui.
-  EOT
-  type = list(object({
-    description = string
-    expression  = string
-    headers     = map(string)
-    ref         = optional(string)
-  }))
-  default = []
 }

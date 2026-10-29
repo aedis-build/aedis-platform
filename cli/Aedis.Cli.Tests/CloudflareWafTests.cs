@@ -6,8 +6,9 @@ namespace Aedis.Cli.Tests;
 
 /// <summary>
 ///     PLT-20 (<c>waf-declared-prod</c>) num site na Cloudflare: o <c>wrangler.jsonc</c> de produção desliga
-///     <c>workers_dev</c> e <c>preview_urls</c>, e o módulo <c>infra/cloudflare</c> declara o rate limit de toda rota de
-///     formulário (ou <c>form_paths = []</c>). Fixture boa e variações ruins num diretório temporário.
+///     <c>workers_dev</c> e <c>preview_urls</c>, todo domínio próprio dele pertence a um workload do módulo
+///     <c>infra/cloudflare</c> e as rotas de formulário do site estão no <c>forms</c> desse workload. Fixture boa e
+///     variações ruins num diretório temporário.
 /// </summary>
 public sealed class CloudflareWafTests : IDisposable
 {
@@ -20,6 +21,7 @@ public sealed class CloudflareWafTests : IDisposable
           "preview_urls": false,
           "env": {
             "staging": { "routes": [{ "pattern": "staging.rlfn.studio", "custom_domain": true }], },
+            "prd": { "routes": [{ "pattern": "rlfn.studio", "custom_domain": true }] },
             "preview": { "preview_urls": true }
           }
         }
@@ -28,11 +30,24 @@ public sealed class CloudflareWafTests : IDisposable
     private const string Module = """
         # infra da zona
         module "zone" {
-          source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=0123456789abcdef0123456789abcdef01234567" # v1.4.0
+          source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=0123456789abcdef0123456789abcdef01234567" # v1.7.0
 
-          zone_name  = "rlfn.studio"
-          hostnames  = ["rlfn.studio"]
-          form_paths = ["/api/proposals"]
+          zone_name = "rlfn.studio"
+          workloads = {
+            site = {
+              type      = "site-ssr"
+              hostnames = ["rlfn.studio", "staging.rlfn.studio"]
+              forms     = ["/api/proposals"]
+              turnstile = true
+              rules = [{
+                description = "métodos { estranhos }"
+                expression  = "not http.request.method in {\"GET\" \"HEAD\"} and http.request.uri.path eq \"/x\""
+                action      = "block"
+              }]
+              headers = { "X-Extra" = "}" }
+            }
+            "cdn" = { type = "cdn", hostnames = ["cdn.rlfn.studio"], bucket = "media", allowed_referers = ["rlfn.studio"] }
+          }
           email_routing = { addresses = [var.inbox] }
         }
         """;
@@ -64,29 +79,50 @@ public sealed class CloudflareWafTests : IDisposable
     }
 
     [Fact]
-    public void Rota_de_formulario_fora_do_form_paths_falha() {
+    public void Workloads_sao_lidos_com_chaves_dentro_de_strings_e_chave_entre_aspas() =>
+        CloudflareWaf.DeclaredWorkloads(_dir).Should().BeEquivalentTo([
+            new CloudflareWorkload("site", ["rlfn.studio", "staging.rlfn.studio"], ["/api/proposals"]),
+            new CloudflareWorkload("cdn", ["cdn.rlfn.studio"], [])
+        ]);
+
+    [Fact]
+    public void Tf_sem_fechar_as_chaves_nao_quebra_a_leitura() {
+        Write("infra/cloudflare/main.tf", """module "zone" { source = "x//infra/cloudflare" workloads = { a = { hostnames = ["rlfn.studio"] """);
+
+        CloudflareWaf.DeclaredWorkloads(_dir).Should().ContainSingle(w => w.Name == "a" && w.Hostnames.SequenceEqual(new[] { "rlfn.studio" }));
+    }
+
+    [Fact]
+    public void Rota_de_formulario_fora_do_forms_do_workload_falha() {
         Write("apps/web/src/app/(site)/contato/route.ts", "const POST = () => new Response(null);\nexport { POST };");
 
-        Plt20().Should().Match<ControlResult>(c => c.Status == "fail" && c.Detail.Contains("rota de formulário /contato fora do form_paths"));
+        Plt20().Should().Match<ControlResult>(c => c.Status == "fail"
+            && c.Detail.Contains("apps/web/wrangler.jsonc: rota de formulário /contato fora de forms do workload site (rlfn.studio, staging.rlfn.studio)"));
     }
 
     [Fact]
-    public void Sem_modulo_ou_sem_form_paths_falha() {
-        Write("infra/cloudflare/main.tf", Module.Replace("""  form_paths = ["/api/proposals"]""", ""));
-        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare declarado");
+    public void Dominio_proprio_sem_workload_falha_com_arquivo_env_e_hostname() {
+        Write("apps/web/wrangler.jsonc", Wrangler.Replace("\"pattern\": \"rlfn.studio\"", "\"pattern\": \"www.rlfn.studio\""));
 
-        Write("infra/cloudflare/main.tf", """module "outro" { source = "./x" form_paths = [] }""");
-        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare declarado");
+        Plt20().Detail.Should().Contain("apps/web/wrangler.jsonc (env.prd): domínio www.rlfn.studio não pertence a nenhum workload de infra/cloudflare");
+    }
 
-        File.Delete(Path.Combine(_dir, "infra", "cloudflare", "main.tf"));
+    [Fact]
+    public void Sem_modulo_ou_sem_workloads_falha() {
+        Write("infra/cloudflare/main.tf", """module "zone" { source = "../infra/cloudflare" zone_name = "rlfn.studio" }""");
+        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare com workloads");
+
+        Write("infra/cloudflare/main.tf", """module "outro" { source = "./x" workloads = { a = { hostnames = ["rlfn.studio"] } } }""");
+        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare com workloads");
+
         Directory.Delete(Path.Combine(_dir, "infra"), true);
-        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare declarado");
+        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare com workloads");
     }
 
     [Fact]
-    public void Form_paths_vazio_explicito_cobre_um_site_sem_formulario() {
+    public void Workload_sem_forms_cobre_um_site_sem_formulario() {
         File.Delete(Path.Combine(_dir, "apps", "web", "src", "app", "api", "proposals", "route.ts"));
-        Write("infra/cloudflare/main.tf", Module.Replace("""["/api/proposals"]""", "[]"));
+        Write("infra/cloudflare/main.tf", Module.Replace("""      forms     = ["/api/proposals"]""", ""));
 
         Plt20().Status.Should().Be("pass");
     }
@@ -94,7 +130,7 @@ public sealed class CloudflareWafTests : IDisposable
     [Theory]
     [InlineData("\"workers_dev\": false", "\"workers_dev\": true", "apps/web/wrangler.jsonc: workers_dev precisa ser false")]
     [InlineData("\"preview_urls\": false,", "", "apps/web/wrangler.jsonc: preview_urls precisa ser false")]
-    [InlineData("\"custom_domain\": true }]", "\"custom_domain\": true }], \"workers_dev\": true", "apps/web/wrangler.jsonc (env.staging): workers_dev precisa ser false")]
+    [InlineData("\"custom_domain\": true }],", "\"custom_domain\": true }], \"workers_dev\": true,", "apps/web/wrangler.jsonc (env.staging): workers_dev precisa ser false")]
     public void Wrangler_de_producao_sem_workers_dev_e_preview_urls_desligados_falha(string from, string to, string expected) {
         Write("apps/web/wrangler.jsonc", Wrangler.Replace(from, to));
 
@@ -104,8 +140,7 @@ public sealed class CloudflareWafTests : IDisposable
     [Fact]
     public void Wrangler_na_raiz_sem_apps_tambem_e_avaliado() {
         Directory.Delete(Path.Combine(_dir, "apps"), true);
-        Write("wrangler.jsonc", """{ "name": "aedis-build", "routes": [{ "pattern": "aedis.build", "custom_domain": true }], "workers_dev": true, "preview_urls": false }""");
-        Write("infra/cloudflare/main.tf", Module.Replace("""["/api/proposals"]""", "[]"));
+        Write("wrangler.jsonc", """{ "name": "site", "routes": [{ "pattern": "rlfn.studio", "custom_domain": true }], "workers_dev": true, "preview_urls": false }""");
 
         var conformance = ConformanceChecker.Check(3, new ValidationResult(), _dir);
 
@@ -120,6 +155,6 @@ public sealed class CloudflareWafTests : IDisposable
 
         CloudflareWaf.ProductionWranglers(_dir).Should().BeEmpty();
         CloudflareWaf.Problems(_dir).Should().BeEmpty();
-        CloudflareWaf.DeclaredFormPaths(_dir).Should().BeNull();
+        CloudflareWaf.DeclaredWorkloads(_dir).Should().BeNull();
     }
 }
