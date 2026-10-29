@@ -337,7 +337,7 @@ jobs:
       - name: Publicar
         id: publish
         if: steps.creds.outputs.publish == 'true'
-        uses: aedis-build/aedis-deploy-cloudflare@0addaaeae0d3d5ada73262b740b39f212d4b8e28 # repin to v1.0.0 once released
+        uses: aedis-build/aedis-deploy-cloudflare@020eca58616bb891072cbf6f7b733287602c276f # v1.0.0
         with:
           mode: ${{ inputs.type == 'ssr' && 'worker' || 'static' }}
           artifact-dir: ${{ inputs.working-directory }}
@@ -398,7 +398,7 @@ jobs:
         if: >-
           failure() && steps.publish.outcome == 'success' && steps.publish.outputs.previous-version-id != ''
           && inputs.percentage < 100 && (steps.smoke-http.outcome == 'failure' || steps.smoke-dast.outcome == 'failure')
-        uses: aedis-build/aedis-deploy-cloudflare@0addaaeae0d3d5ada73262b740b39f212d4b8e28 # repin to v1.0.0 once released
+        uses: aedis-build/aedis-deploy-cloudflare@020eca58616bb891072cbf6f7b733287602c276f # v1.0.0
         with:
           mode: worker
           artifact-dir: ${{ inputs.working-directory }}
@@ -504,7 +504,7 @@ jobs:
             --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-site.yml
       - name: Rollback
         id: rollback
-        uses: aedis-build/aedis-deploy-cloudflare@0addaaeae0d3d5ada73262b740b39f212d4b8e28 # repin to v1.0.0 once released
+        uses: aedis-build/aedis-deploy-cloudflare@020eca58616bb891072cbf6f7b733287602c276f # v1.0.0
         with:
           mode: ${{ inputs.type == 'ssr' && 'worker' || 'static' }}
           artifact-dir: ${{ inputs.working-directory }}
