@@ -127,8 +127,8 @@ levels:
         source: drift-summary
         check: drift-report
       - id: PLT-20
-        title: WAF declarado em toda API exposta em produção
-        source: chart
+        title: WAF declarado em toda API ou site exposto em produção (chart ou módulo infra/cloudflare)
+        source: chart + infra/cloudflare
         check: waf-declared-prod
       - id: PLT-21
         title: Evidências retidas (sumários versionados)

@@ -268,12 +268,49 @@ No `_headers`, cada caminho recebe no máximo uma CSP. Não use `/*` com uma CSP
 regras de página: em produção a Cloudflare não aplicou o detach na raiz `/` e enviou duas políticas, que o navegador
 aplica juntas.
 
+### Infra da Cloudflare como código
+
+A zona onde o site é servido tem a sua postura de segurança no módulo Terraform
+[`infra/cloudflare`](../infra/cloudflare/README.md) (provider `cloudflare/cloudflare` v5): TLS mínimo 1.2, Always Use
+HTTPS e HSTS; Bot Fight Mode desligado e IA liberada (os crawlers de IA podem ler os sites); uma regra customizada que
+só aceita `GET`, `HEAD` e `POST` nos hostnames, mais as suas até o limite do plano (5 no Free); a única regra de rate
+limit do Free no `POST` das rotas de formulário (10 s, Block), que no Pro vira Managed Challenge em 1 minuto; no Pro,
+o Cloudflare Managed Ruleset e o OWASP Core; Turnstile, Email Routing e buckets R2 quando pedidos.
+
+```hcl
+# infra/cloudflare/main.tf no repositório do site
+module "zone" {
+  source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=<sha da tag>" # vX.Y.Z
+
+  zone_name  = "meu-site.example"
+  plan       = "free"
+  hostnames  = ["meu-site.example"]
+  form_paths = ["/api/contato"] # sem formulário: [] explícito
+  turnstile  = {}
+}
+```
+
+| Fica fora do módulo | Com quem |
+|---|---|
+| A zona | já existe; o módulo só a lê |
+| Domínio próprio do Worker | `routes` com `custom_domain: true` no `wrangler.jsonc` (o wrangler cria DNS e certificado) |
+| Segredos do Worker, inclusive o do Turnstile | `RUNTIME_SECRETS` do environment, presos à versão pelo `deploy-site.yml` |
+
+Quem aplica é o dono da zona, com um token só para isso (escopos, `terraform import` do que já existe no painel e
+backend opcional em R2 no [README do módulo](../infra/cloudflare/README.md)). O CI da plataforma roda
+`terraform fmt -check`, `validate` e `test` (provider simulado) no módulo e nos exemplos, sem credenciais.
+
+O `aedis platform validate --level 3` cobra o módulo de um site na Cloudflare (PLT-20, `waf-declared-prod`): com um
+`wrangler.jsonc` de produção (rota `custom_domain`) na raiz ou em `apps/*/`, exige `workers_dev: false` e
+`preview_urls: false` e um `infra/cloudflare/*.tf` com o módulo cujo `form_paths` cobre toda rota de formulário do
+site (route handler do Next com `POST`), ou `form_paths = []` quando não há nenhuma.
+
 ## 4. O que L3 significa para um site
 
 | Exigência | Como o site a cumpre |
 |---|---|
 | DAST sem alerta alto não aceito | ZAP baseline contra o site servido em todo PR (`dast-start`); aceites com validade em `dast-accept.yaml` |
-| WAF declarado em produção | `ingress.edge.waf: true` no `env/prod.yaml`; a conformidade (`waf-declared-prod`) recusa um site exposto sem a declaração |
+| WAF declarado em produção | no cluster, `ingress.edge.waf: true` no `env/prod.yaml`; na Cloudflare, o módulo `infra/cloudflare` com o rate limit nas rotas de formulário; a conformidade (`waf-declared-prod`) recusa um site exposto sem a declaração |
 | Cabeçalhos de segurança | emitidos pela própria app em `proxy.ts` (CSP com nonce, HSTS, nosniff, sem framing, sem vazamento de referrer, `Cache-Control: no-store` nas páginas); a borda pode reforçar, não substituir |
 | Cobertura ≥ 85 % linhas / 70 % branches, sem regressão | `vitest --coverage` com reporter Cobertura e o gate do `coverage-js.yml` |
 | Fuzzing | testes baseados em propriedades com fast-check |

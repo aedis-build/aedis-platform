@@ -53,7 +53,8 @@ public static partial class ConformanceChecker
 
     private static ControlResult Evaluate(ControlDefinition control, ValidationResult validation, string root) {
         // Um repositório sem apps/ (uma action, uma biblioteca) só responde pelos controles de repositório.
-        if (!Directory.Exists(Path.Combine(root, "apps")) && control.Check != "platform-pins-released")
+        if (!Directory.Exists(Path.Combine(root, "apps")) && control.Check != "platform-pins-released"
+            && !(control.Check == "waf-declared-prod" && CloudflareWaf.ProductionWranglers(root).Count > 0))
             return new ControlResult(control.Id, control.Title, "unknown", "não se aplica: repositório sem apps/");
         var manifests = validation.Rendered.ToDictionary(kv => kv.Key, kv => File.ReadAllText(kv.Value), StringComparer.Ordinal);
         var prod = manifests.Where(kv => IsProd(kv.Value)).ToList();
@@ -65,7 +66,7 @@ public static partial class ConformanceChecker
             "pdb-present" => Result(control, manifests.Where(kv => IsApi(kv.Value)).All(kv => kv.Value.Contains("kind: PodDisruptionBudget", StringComparison.Ordinal)), Missing(manifests.Where(kv => IsApi(kv.Value)), m => m.Contains("kind: PodDisruptionBudget", StringComparison.Ordinal))),
             "prod-digest" => Result(control, prod.All(kv => ImageByDigest().IsMatch(kv.Value)), Missing(prod, m => ImageByDigest().IsMatch(m))),
             "egress-policy-prod" => Result(control, prod.All(kv => kv.Value.Contains("-egress", StringComparison.Ordinal)), Missing(prod, m => m.Contains("-egress", StringComparison.Ordinal))),
-            "waf-declared-prod" => Result(control, prod.Where(kv => kv.Value.Contains("kind: Ingress", StringComparison.Ordinal)).All(kv => WafDeclared(kv.Key, validation)), "APIs expostas em prod sem ingress.edge.waf: true"),
+            "waf-declared-prod" => WafDeclaredProd(control, prod, validation, root),
             "prod-by-pr" => Result(control, CodeownersCoverProd(validation), "CODEOWNERS não cobre apps/*/env/prod.yaml"),
             "platform-pins-released" => Result(control, UnreleasedPlatformPins(root).Count == 0, string.Join(", ", UnreleasedPlatformPins(root))),
             _ => new ControlResult(control.Id, control.Title, "unknown", $"depende de {control.Source} (CI/cluster)")
@@ -84,6 +85,14 @@ public static partial class ConformanceChecker
     private static bool IsProd(string m) => m.Contains("aedis.build/environment-class: prod", StringComparison.Ordinal);
     private static bool IsApi(string m) => m.Contains("app.kubernetes.io/component: api", StringComparison.Ordinal);
     private static bool IsCronJob(string m) => m.Contains("kind: CronJob", StringComparison.Ordinal);
+
+    /// <summary>No cluster, todo Ingress de produção com <c>ingress.edge.waf: true</c>; na Cloudflare, <see cref="CloudflareWaf.Problems" />.</summary>
+    private static ControlResult WafDeclaredProd(ControlDefinition control, List<KeyValuePair<string, string>> prod, ValidationResult validation, string root) {
+        var problems = CloudflareWaf.Problems(root).ToList();
+        if (!prod.Where(kv => kv.Value.Contains("kind: Ingress", StringComparison.Ordinal)).All(kv => WafDeclared(kv.Key, validation)))
+            problems.Insert(0, "APIs expostas em prod sem ingress.edge.waf: true");
+        return Result(control, problems.Count == 0, string.Join("; ", problems));
+    }
 
     private static bool WafDeclared(string key, ValidationResult validation) =>
         validation.ValueFiles.TryGetValue(key, out var files) && files.Any(f => WafTrue().IsMatch(File.ReadAllText(f)));

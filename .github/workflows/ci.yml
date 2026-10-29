@@ -1,5 +1,6 @@
 # CI deste repositório: chart (lint, unittest, render dos exemplos, kubeconform, Trivy config), scripts, o
-# template do tenant validado com o próprio chart e o deploy-site.yml (static e ssr) em dry-run.
+# template do tenant validado com o próprio chart, o deploy-site.yml (static e ssr) em dry-run e o módulo Terraform
+# infra/cloudflare (fmt, validate e test com o provider simulado, sem credenciais).
 name: ci
 
 on:
@@ -17,6 +18,33 @@ concurrency:
 permissions: {}
 
 jobs:
+  terraform:
+    if: github.event.action != 'closed'
+    name: Módulo infra/cloudflare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.6
+          terraform_wrapper: false
+
+      - name: fmt, validate e test (sem credenciais; nada é aplicado)
+        working-directory: infra/cloudflare
+        run: |
+          set -euo pipefail
+          terraform fmt -check -recursive -diff
+          for d in . examples/*/; do
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+          done
+          terraform test
+
   chart:
     if: github.event.action != 'closed'
     name: Chart aedis-app
