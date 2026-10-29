@@ -123,6 +123,12 @@ resource "cloudflare_ruleset" "custom" {
   }
 }
 
+# Até a v1.4 o ruleset tinha count (sem form_paths não havia regra); o moved leva o estado antigo sem recriar.
+moved {
+  from = cloudflare_ruleset.rate_limit[0]
+  to   = cloudflare_ruleset.rate_limit
+}
+
 resource "cloudflare_ruleset" "rate_limit" {
   zone_id     = local.zone_id
   kind        = "zone"
