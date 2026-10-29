@@ -109,14 +109,14 @@ public static partial class ConformanceChecker
     ///     Linhas <c>uses: aedis-build/aedis-platform/...</c> e das actions do Aedis (<c>aedis-release-cut</c>, <c>aedis-dast</c>,
     ///     <c>aedis-conformance</c>, <c>aedis-sca</c>, <c>aedis-deploy-cloudflare</c>) dos workflows do repo que não pinam o SHA de uma tag de
     ///     release (<c>@&lt;sha&gt; # vX.Y.Z</c>): uma tag solta, uma branch ou um SHA sem a tag no comentário, que o
-    ///     Dependabot não acompanha. Linhas de comentário (exemplos de uso na documentação do workflow) não contam. Vazio
-    ///     quando todos cumprem, ou quando não há workflows.
+    ///     Dependabot não acompanha. Linhas de comentário (exemplos de uso na documentação do workflow) não contam. Somam-se
+    ///     os módulos Terraform da organização fora de uma release (<see cref="UnpinnedOrgModules" />). Vazio quando todos
+    ///     cumprem.
     /// </summary>
     public static IReadOnlyList<string> UnreleasedPlatformPins(string root) {
         var dir = Path.Combine(root, ".github", "workflows");
-        if (!Directory.Exists(dir)) return [];
         var offenders = new List<string>();
-        foreach (var file in Directory.EnumerateFiles(dir).Where(f => f.EndsWith(".yml", StringComparison.Ordinal) || f.EndsWith(".yaml", StringComparison.Ordinal)).Order(StringComparer.Ordinal)) {
+        foreach (var file in (Directory.Exists(dir) ? Directory.EnumerateFiles(dir) : []).Where(f => f.EndsWith(".yml", StringComparison.Ordinal) || f.EndsWith(".yaml", StringComparison.Ordinal)).Order(StringComparer.Ordinal)) {
             var lines = File.ReadAllLines(file);
             for (var i = 0; i < lines.Length; i++) {
                 if (lines[i].TrimStart().StartsWith('#')) continue;
@@ -127,7 +127,41 @@ public static partial class ConformanceChecker
             }
         }
 
+        offenders.AddRange(UnpinnedOrgModules(root));
         return offenders;
+    }
+
+    /// <summary>
+    ///     Módulos Terraform da organização nos <c>*.tf</c> do repositório sem o pin de uma release. Do Terraform Registry
+    ///     (<c>source = "aedis-build/&lt;nome&gt;/&lt;provedor&gt;"</c>), a <c>version</c> do bloco precisa ser exata
+    ///     (<c>X.Y.Z</c> ou <c>= X.Y.Z</c>), nunca um intervalo: o Registry só resolve versões, não SHAs, e basta porque as
+    ///     releases da organização são imutáveis (a tag não se move, então a versão é sempre o mesmo código). Por git
+    ///     (<c>github.com/aedis-build/...</c>), <c>?ref=&lt;sha&gt;</c> com a tag <c>vX.Y.Z</c> no comentário da linha,
+    ///     como nos workflows. Pastas <c>.terraform</c>, <c>node_modules</c> e <c>.git</c> ficam de fora.
+    /// </summary>
+    public static IEnumerable<string> UnpinnedOrgModules(string root) {
+        if (!Directory.Exists(root)) yield break;
+        var files =Directory.EnumerateFiles(root, "*.tf", SearchOption.AllDirectories)
+            .Where(f => !Path.GetRelativePath(root, f).Replace('\\', '/').Split('/').Any(d => d is ".terraform" or "node_modules" or ".git"))
+            .Order(StringComparer.Ordinal);
+        foreach (var file in files) {
+            var name = Path.GetRelativePath(root, file).Replace('\\', '/');
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++) {
+                if (TfSource().Match(lines[i]) is not { Success: true } source) continue;
+                var value = source.Groups["source"].Value;
+                if (RegistryOrgModule().IsMatch(value)) {
+                    // A version do mesmo bloco: as linhas até o fechamento do módulo (o "}" na coluna 0 do terraform fmt).
+                    var version = lines.Skip(i + 1).TakeWhile(l => !l.StartsWith('}')).Select(l => TfVersion().Match(l)).FirstOrDefault(m => m.Success);
+                    if (version is null || !ExactVersion().IsMatch(version.Groups["version"].Value))
+                        yield return $"{name}:{i + 1} {value} version {(version is null ? "ausente" : version.Groups["version"].Value)} (exige versão exata X.Y.Z)";
+                }
+                else if (value.Contains("github.com/aedis-build/", StringComparison.Ordinal)
+                         && !(GitRef().Match(value) is { Success: true } gitRef && Sha40().IsMatch(gitRef.Groups["ref"].Value) && TfReleaseComment().IsMatch(lines[i]))) {
+                    yield return $"{name}:{i + 1} {value} (exige ?ref=<sha> # vX.Y.Z)";
+                }
+            }
+        }
     }
 
     /// <summary><c>conformance/levels.yaml</c> do tenant, se existir, senão o embarcado.</summary>
@@ -200,6 +234,24 @@ public static partial class ConformanceChecker
 
     [GeneratedRegex("^[0-9a-f]{40}$")]
     private static partial Regex Sha40();
+
+    [GeneratedRegex(@"^\s*source\s*=\s*""(?<source>[^""]+)""")]
+    private static partial Regex TfSource();
+
+    [GeneratedRegex(@"^(?:registry\.terraform\.io/)?aedis-build/[^/]+/[^/]+$")]
+    private static partial Regex RegistryOrgModule();
+
+    [GeneratedRegex(@"^\s*version\s*=\s*""(?<version>[^""]*)""")]
+    private static partial Regex TfVersion();
+
+    [GeneratedRegex(@"^=?\s*\d+\.\d+\.\d+$")]
+    private static partial Regex ExactVersion();
+
+    [GeneratedRegex(@"[?&]ref=(?<ref>[^&\s]+)")]
+    private static partial Regex GitRef();
+
+    [GeneratedRegex(@"#\s*v\d+\.\d+\.\d+\s*$")]
+    private static partial Regex TfReleaseComment();
 
     [GeneratedRegex(@"^v\d+\.\d+\.\d+$")]
     private static partial Regex ReleaseTag();

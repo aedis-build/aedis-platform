@@ -26,7 +26,7 @@ O `.github/workflows/deploy.yml` chama o `deploy-site.yml` do [Aedis Platform](h
 em todo push na `main`: build isolado, SBOM, atestação (SLSA Build L3), publicação exatamente dos bytes atestados e
 smoke test. O `wrangler.jsonc` declara o domínio próprio (`custom_domain: true`) e desliga `workers.dev` e as URLs
 de versão. O domínio e os segredos do Worker são do wrangler; WAF, rate limit, TLS e o resto da zona ficam no
-módulo Terraform `infra/cloudflare` da plataforma.
+módulo Terraform [`aedis-build/aedis/cloudflare`](https://registry.terraform.io/modules/aedis-build/aedis/cloudflare), declarado em `infra/cloudflare/main.tf` com versão exata.
 
 Uma vez, no GitHub: crie o environment `prd` (só `main`, aprovador obrigatório) com os segredos
 `CLOUDFLARE_API_TOKEN` e `CLOUDFLARE_ACCOUNT_ID`. O `.github/workflows/aedis-ci.yml` roda o pipeline único

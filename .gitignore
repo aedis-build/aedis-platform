@@ -13,4 +13,3 @@ TestResults/
 *.tfstate
 *.tfstate.*
 *.tfvars
-infra/cloudflare/.terraform.lock.hcl

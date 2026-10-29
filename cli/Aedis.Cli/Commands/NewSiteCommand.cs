@@ -43,7 +43,7 @@ public static partial class NewSiteCommand
 
             Console.WriteLine($"Site {siteName} gerado em {root} ({written} arquivos).");
             Console.WriteLine(cloudflare
-                ? "Próximos passos: `pnpm install`, `pnpm dev`, criar o environment prd com CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID e declarar a zona no módulo infra/cloudflare do Aedis Platform."
+                ? "Próximos passos: `pnpm install`, `pnpm dev`, criar o environment prd com CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID e declarar o site em infra/cloudflare/main.tf com o módulo aedis-build/aedis/cloudflare do Terraform Registry (versão exata)."
                 : "Próximos passos: `pnpm install`, `pnpm dev`, adicionar componentes com `pnpm dlx shadcn@latest add @aedis/<item>` e copiar deploy/app.yaml para o repo GitOps.");
             return 0;
         });
