@@ -59,6 +59,8 @@ public static partial class CloudflareWaf
         if (!Directory.Exists(dir)) return null;
         HashSet<string>? paths = null;
         foreach (var file in Directory.GetFiles(dir, "*.tf")) {
+            // Arquivos enumerados sob o repositório informado pelo operador, não entrada externa.
+            // nosemgrep: csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine
             var text = HclComment().Replace(File.ReadAllText(file), "");
             foreach (Match module in ModuleBlock().Matches(text)) {
                 var body = module.Groups["body"].Value;
