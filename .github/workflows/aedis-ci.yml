@@ -11,6 +11,11 @@
 #
 # Permissões que o caller concede ao job que chama este workflow (o GitHub valida na largada, mesmo para jobs
 # pulados): contents: read, actions: read, packages: read, security-events: write, id-token: write.
+#
+# Repositório privado sem GitHub Code Security (plano Free/Team): `code-scanning: false`, opt-in e visível no summary.
+# SAST e SCA continuam com o mesmo gate (falham pelo limiar e pelos aceites), mas os achados ficam no step summary e
+# nos artefatos, sem upload de SARIF (a API do code scanning recusa); o CodeQL não roda, porque a licença dele só
+# cobre código privado com Code Security. O padrão (true) não muda nada.
 name: aedis-ci
 
 on:
@@ -77,6 +82,14 @@ on:
         description: Rulesets Semgrep somados aos da linguagem (ex. "p/nextjs")
         type: string
         default: ""
+      node-version:
+        description: Versão do Node dos jobs node (check, cobertura, DAST); siga o engines do package.json (ex. "24")
+        type: string
+        default: "22"
+      code-scanning:
+        description: Envia SARIF ao code scanning e roda o CodeQL. false = repositório privado sem Code Security (os gates continuam)
+        type: boolean
+        default: true
       platform-ref:
         type: string
         default: ""
@@ -118,6 +131,7 @@ jobs:
     with:
       script: ${{ inputs.coverage-script }}
       reports: ${{ inputs.coverage-reports }}
+      node-version: ${{ inputs.node-version }}
       min-line: ${{ inputs.min-line }}
       min-branch: ${{ inputs.min-branch }}
       no-regression: ${{ inputs.no-regression }}
@@ -138,7 +152,7 @@ jobs:
       - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22"
+          node-version: ${{ inputs.node-version }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Scripts
@@ -186,9 +200,12 @@ jobs:
       # v1 = última release do major; compatível por política (docs/versioning.md); passe platform-ref para fixar um SHA
       platform-ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || 'v1' }}
       extra-configs: ${{ format('{0} {1}', inputs.language == 'node' && 'p/javascript p/typescript p/react' || '', inputs.sast-extra-configs) }}
+      code-scanning: ${{ inputs.code-scanning }}
 
+  # Só com code scanning: a licença do CodeQL não cobre código privado sem GitHub Code Security.
   codeql:
     name: CodeQL
+    if: inputs.code-scanning
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -233,9 +250,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Sem code scanning
+        if: ${{ !inputs.code-scanning }}
+        run: |
+          echo "::notice::code-scanning: false: SAST e SCA sem upload de SARIF (achados no summary e nos artefatos) e sem CodeQL"
+          echo "**code-scanning: false**: SAST e SCA sem upload de SARIF, achados no summary e nos artefatos; CodeQL não roda (licença só com GitHub Code Security)." >> "$GITHUB_STEP_SUMMARY"
       - uses: aedis-build/aedis-sca@f82449b615839f892dbc142f7f9609b497616d47 # v1.0.1
         with:
           summary-name: sca-summary
+          sarif-upload: ${{ inputs.code-scanning && 'true' || 'false' }}
 
   # DAST (ZAP baseline) contra a app servida pelo comando dast-start; aceites em dast-accept.yaml do repositório.
   dast:
@@ -257,7 +280,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: inputs.language == 'node'
         with:
-          node-version: "22"
+          node-version: ${{ inputs.node-version }}
           cache: pnpm
       - if: inputs.language == 'node'
         run: pnpm install --frozen-lockfile

@@ -88,6 +88,43 @@ accept:
     paths: [/llms-full.txt]
 ```
 
+`node-version` (padrão `"22"`) vale para todo job que instala Node (Check, cobertura e DAST). Siga o `engines` do
+`package.json`: com `engines.node: ">=24"` e o `engine-strict` do pnpm, o padrão falha com `ERR_PNPM_UNSUPPORTED_ENGINE`.
+O `deploy-site.yml` tem o mesmo input.
+
+### Repositório privado sem os recursos pagos do GitHub
+
+Code scanning em repositório privado exige GitHub Code Security, e atestação de artefato exige GitHub Enterprise
+Cloud. Num repositório privado nos planos Free ou Team, os dois recursos não existem. Os jobs que dependem deles
+falham com `Resource not accessible by integration` ou na API de atestação. Para esse caso há dois inputs explícitos.
+Eles nunca são ligados automaticamente, e o padrão (`true`) continua o seguro:
+
+```yaml
+jobs:
+  aedis:
+    uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@<sha da tag> # vX.Y.Z
+    with:
+      language: node
+      node-version: "24"
+      code-scanning: false   # repositório privado sem GitHub Code Security
+  # em .github/workflows/deploy.yml
+  deploy:
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-site.yml@<sha da tag> # vX.Y.Z
+    with:
+      type: ssr
+      node-version: "24"
+      attestation: false     # repositório privado sem GitHub Enterprise Cloud
+```
+
+| Input | O que continua | O que sai |
+|---|---|---|
+| `code-scanning: false` (`aedis-ci.yml`, repassado ao `sast.yml` e à action SCA) | os gates do SAST (Semgrep) e do SCA (Trivy) falham pelo mesmo limiar e pelos mesmos aceites; os achados ficam no step summary e nos artefatos `sast-summary` e `sca-summary` | o upload de SARIF ao code scanning; o CodeQL, porque a licença dele só cobre código privado com GitHub Code Security |
+| `attestation: false` (`deploy-site.yml`) | SBOM; o SHA-256 do pacote sai do build como output do job e o deploy confere o pacote baixado contra ele antes de publicar | a atestação de proveniência e o `gh attestation verify` no deploy e no rollback; o rollback aceita o id da versão com aviso. O summary avisa "publicado sem atestação de proveniência" |
+
+Sem atestação não há SLSA Build L3 no deploy. Por isso `attestation: false` reprova o PLT-24, e o repositório
+não fecha o L3. Sem code scanning o Scorecard também perde pontos em SAST, e o L3 exige nota 10 nesse check. O L2
+continua possível com os dois inputs em `false`.
+
 ## 3. Deploy: `type: site` no chart
 
 ```yaml
@@ -322,6 +359,7 @@ workload. As mensagens dizem o arquivo, o env e o hostname.
 | Cobertura ≥ 85 % linhas / 70 % branches, sem regressão | `vitest --coverage` com reporter Cobertura e o gate do `coverage-js.yml` |
 | Fuzzing | testes baseados em propriedades com fast-check |
 | Imagem assinada, SBOM, proveniência, pin por digest | `release.yml` (`build-image.yml`) em tag `vX.Y.Z` + `image.digest` em prod, como para qualquer app |
+| Deploy na Cloudflare com proveniência (PLT-24) | `deploy-site.yml` com a atestação ligada (padrão); `attestation: false` reprova o L3 |
 
 A sessão fica em cookie `HttpOnly` emitido pelo backend; o site chama o backend só na mesma origem (`api()` do
 Aedis UI). Por isso o site não tem segredos no cofre.

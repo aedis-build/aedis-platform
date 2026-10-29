@@ -1,5 +1,7 @@
 # Workflow reutilizável: SAST com Semgrep (rulesets públicos + regras do Aedis). SARIF no code scanning e
-# sast-summary.json (aedis.platform/sast-summary/v1). ERROR não aceito em sast-accept.yaml falha o job.
+# sast-summary.json (aedis.platform/sast-summary/v1). ERROR não aceito em sast-accept.yaml falha o job. Com
+# code-scanning: false (repositório privado sem GitHub Code Security) o gate é o mesmo, sem o upload do SARIF: os
+# achados ficam no step summary e no artefato sast-summary.
 name: sast
 
 on:
@@ -16,6 +18,10 @@ on:
         description: Configs Semgrep adicionais, separadas por espaço (ex. p/jwt p/sqli)
         type: string
         default: ""
+      code-scanning:
+        description: Envia o SARIF ao code scanning (false = repositório privado sem Code Security)
+        type: boolean
+        default: true
     outputs:
       result:
         value: ${{ jobs.semgrep.outputs.result }}
@@ -66,7 +72,11 @@ jobs:
           set -euo pipefail
           script=scripts/sast-summary.py; [ -f "$script" ] || script=.aedis-platform/scripts/sast-summary.py
           accept=""; [ -f "$ACCEPT_FILE" ] && accept="--accept $ACCEPT_FILE"
-          if python3 "$script" --input sast.json $accept --out sast-summary.json --sarif-in sast.sarif --sarif-out sast.upload.sarif; then
+          rc=0
+          python3 "$script" --input sast.json $accept --out sast-summary.json --sarif-in sast.sarif --sarif-out sast.upload.sarif > sast-gate.txt || rc=$?
+          cat sast-gate.txt
+          { echo '### SAST (Semgrep)'; echo '```'; cat sast-gate.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -eq 0 ]; then
             echo "result=pass" >> "$GITHUB_OUTPUT"
           else
             echo "result=fail" >> "$GITHUB_OUTPUT"; exit 1
@@ -74,7 +84,7 @@ jobs:
 
       # SARIF já sem os achados aceitos em sast-accept.yaml: o code scanning mostra só o que o gate também cobra.
       - uses: github/codeql-action/upload-sarif@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
-        if: always() && hashFiles('sast.upload.sarif') != ''
+        if: always() && inputs.code-scanning && hashFiles('sast.upload.sarif') != ''
         with:
           sarif_file: sast.upload.sarif
           category: semgrep

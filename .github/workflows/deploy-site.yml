@@ -33,6 +33,12 @@
 # comentário do preview), actions: read (o rollback baixa o pacote do run original). O GitHub valida as permissões de
 # todos os jobs, inclusive os que não rodam naquele evento.
 #
+# Repositório privado sem GitHub Enterprise Cloud (plano Free/Team): a API de atestação não existe ali, então
+# `attestation: false`, opt-in e visível. Sem atestação, sem `gh attestation verify` e sem SLSA Build L3 (a régua L3
+# reprova, controle PLT-24); a integridade dentro do run continua: o SHA-256 do pacote sai do job de build como output
+# e o deploy confere o pacote baixado contra ele antes de publicar. O summary avisa "publicado sem atestação de
+# proveniência", e o rollback aceita o id da versão com aviso, sem a verificação do pacote original.
+#
 # Kubernetes não passa por aqui: um site no cluster é `type: site` do chart aedis-app (GitOps).
 name: deploy-site
 
@@ -106,6 +112,10 @@ on:
         description: Rollback para esta versão (workflow_dispatch), depois de verificar a atestação do pacote dela
         type: string
         default: ""
+      attestation:
+        description: Atesta o pacote e verifica a atestação no deploy e no rollback. false = repositório privado sem Enterprise Cloud (sem SLSA L3)
+        type: boolean
+        default: true
     secrets:
       CLOUDFLARE_API_TOKEN:
         required: false
@@ -154,6 +164,7 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
           REPO: ${{ github.repository }}
+          ATTESTATION: ${{ inputs.attestation }}
         run: |
           set -euo pipefail
           fail() { echo "::error::$1"; exit 1; }
@@ -182,6 +193,9 @@ jobs:
           fi
           { echo "mode=$mode"; echo "environment=$environment"; echo "wrangler-env=$wenv"; echo "alias=$alias"; } >> "$GITHUB_OUTPUT"
           echo "modo $mode, environment '${environment}', wrangler env '${wenv}'${alias:+, alias $alias}"
+          if [ "$ATTESTATION" != true ]; then
+            echo "::warning::attestation: false: o pacote não é atestado nem verificado (sem SLSA Build L3); só o SHA-256 dentro do run"
+          fi
 
   build:
     name: Build, SBOM e atestação
@@ -192,6 +206,8 @@ jobs:
       contents: read
       id-token: write
       attestations: write
+    outputs:
+      digest: ${{ steps.digest.outputs.sha256 }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -244,6 +260,22 @@ jobs:
           [ -n "$cfg" ] || { echo "::error::sem wrangler.json, wrangler.jsonc ou wrangler.toml em working-directory"; exit 1; }
           [ -d .open-next ] || { echo "::error::o build não gerou .open-next/ (build-command: $BUILD_COMMAND)"; exit 1; }
           tar -czf "$GITHUB_WORKSPACE/$NAME.tgz" .open-next "$cfg"
+      # O digest viaja como output do job (não pelo armazenamento de artefatos): o deploy confere o pacote baixado
+      # contra ele, com ou sem atestação.
+      - name: Digest do pacote
+        id: digest
+        env:
+          NAME: ${{ inputs.name }}
+          ATTESTATION: ${{ inputs.attestation }}
+        run: |
+          set -euo pipefail
+          sha="$(sha256sum "$NAME.tgz" | cut -d' ' -f1)"
+          echo "sha256=$sha" >> "$GITHUB_OUTPUT"
+          echo "pacote \`$NAME.tgz\`: sha256 \`$sha\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$ATTESTATION" != true ]; then
+            echo "::warning::attestation: false: pacote sem atestação de proveniência"
+            echo "**Sem atestação de proveniência** (attestation: false): o pacote não é atestado e o deploy não verifica proveniência, só o SHA-256 dentro deste run." >> "$GITHUB_STEP_SUMMARY"
+          fi
       - name: SBOM (syft, SPDX) das dependências que construíram o site
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
@@ -252,6 +284,7 @@ jobs:
           output-file: ${{ inputs.name }}.sbom.spdx.json
           upload-artifact: false
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        if: inputs.attestation
         with:
           subject-path: ${{ inputs.name }}.tgz
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -301,7 +334,7 @@ jobs:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: ${{ inputs.name }}
-      - name: Verificar a atestação e desempacotar exatamente aqueles bytes
+      - name: Verificar o pacote e desempacotar exatamente aqueles bytes
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -309,10 +342,19 @@ jobs:
           TYPE: ${{ inputs.type }}
           WD: ${{ inputs.working-directory }}
           OUT: ${{ inputs.out-dir }}
+          DIGEST: ${{ needs.build.outputs.digest }}
+          ATTESTATION: ${{ inputs.attestation }}
         run: |
           set -euo pipefail
-          gh attestation verify "$NAME.tgz" -R "$REPO" \
-            --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-site.yml
+          got="$(sha256sum "$NAME.tgz" | cut -d' ' -f1)"
+          [ -n "$DIGEST" ] && [ "$got" = "$DIGEST" ] || { echo "::error::o pacote baixado ($got) não é o que o build produziu (${DIGEST:-sem digest})"; exit 1; }
+          if [ "$ATTESTATION" = true ]; then
+            gh attestation verify "$NAME.tgz" -R "$REPO" \
+              --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-site.yml
+          else
+            echo "::warning::publicado sem atestação de proveniência (attestation: false); SHA-256 conferido: $got"
+            echo "**Publicado sem atestação de proveniência** (attestation: false); SHA-256 conferido contra o build: $got." >> "$GITHUB_STEP_SUMMARY"
+          fi
           if [ "$TYPE" = static ]; then
             rm -rf "${WD:?}/$OUT" && mkdir -p "$WD/$OUT" && tar -xzf "$NAME.tgz" -C "$WD/$OUT"
           else
@@ -326,10 +368,10 @@ jobs:
           HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: |
           if [ "$MODE" = build ]; then
-            echo "pull_request sem preview: pacote construído, atestado e verificado; nada é publicado" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "pull_request sem preview: pacote construído e verificado; nada é publicado" | tee -a "$GITHUB_STEP_SUMMARY"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           elif [ "$HAS_TOKEN" != true ]; then
-            echo "::warning::sem CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID no environment '${ENVIRONMENT}': atestação verificada, deploy pulado (dry-run)"
+            echo "::warning::sem CLOUDFLARE_API_TOKEN e CLOUDFLARE_ACCOUNT_ID no environment '${ENVIRONMENT}': pacote verificado, deploy pulado (dry-run)"
             echo "publish=false" >> "$GITHUB_OUTPUT"
           else
             echo "publish=true" >> "$GITHUB_OUTPUT"
@@ -472,8 +514,17 @@ jobs:
           cache-dependency-path: ${{ steps.install.outputs.dir }}/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
         working-directory: ${{ steps.install.outputs.dir }}
+      - name: Rollback sem atestação
+        if: ${{ !inputs.attestation }}
+        env:
+          VERSION: ${{ inputs.rollback-version-id }}
+        run: |
+          [[ "$VERSION" =~ ^[0-9a-f-]{36}$ ]] || { echo "::error::rollback-version-id não é um id de versão"; exit 1; }
+          echo "::warning::attestation: false: rollback para $VERSION sem verificar a proveniência do pacote daquela versão"
+          echo "**Rollback sem verificação de proveniência** (attestation: false): versão $VERSION aceita como informada." >> "$GITHUB_STEP_SUMMARY"
       - name: Run que publicou a versão
         id: origin
+        if: inputs.attestation
         working-directory: ${{ inputs.working-directory }}
         env:
           VERSION: ${{ inputs.rollback-version-id }}
@@ -490,11 +541,13 @@ jobs:
           [ -n "$run" ] || { echo "::error::a versão $VERSION não foi publicada pelo deploy-site (a mensagem não cita o run): rollback recusado"; exit 1; }
           echo "run-id=$run" >> "$GITHUB_OUTPUT"
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: inputs.attestation
         with:
           name: ${{ inputs.name }}
           run-id: ${{ steps.origin.outputs.run-id }}
           github-token: ${{ github.token }}
       - name: Verificar a atestação do pacote daquela versão
+        if: inputs.attestation
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
