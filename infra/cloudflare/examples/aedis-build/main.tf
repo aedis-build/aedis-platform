@@ -17,8 +17,9 @@ module "zone" {
   # Num repositório de site: "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=<sha da tag>"
   source = "../.."
 
-  zone_name  = "aedis.build"
-  plan       = "free"
-  hostnames  = ["aedis.build", "ui.aedis.build"]
+  zone_name = "aedis.build"
+  plan      = "free"
+  hostnames = ["aedis.build", "ui.aedis.build"]
+  # Sem formulário: a única regra de rate limit do Free vira o limite geral por IP nos dois hostnames.
   form_paths = []
 }

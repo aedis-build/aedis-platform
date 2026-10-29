@@ -6,14 +6,46 @@ serve sites do Aedis em Workers (`deploy-site.yml`). Um módulo por zona; os hos
 | Recurso | Free | Pro |
 |---|---|---|
 | TLS mínimo 1.2, Always Use HTTPS, HSTS (2 anos, subdomínios, preload, nosniff) | sim | sim |
-| Bot Fight Mode desligado, bloqueio de IA desligado, labirinto de IA desligado, robots.txt do site (não o gerenciado) | sim | sim, e Super Bot Fight Mode: bots verificados passam, automatizado sem identidade recebe Managed Challenge |
+| Bot Fight Mode (`bot_fight_mode`, padrão ligado) | sim | substituído pelo Super Bot Fight Mode: bots verificados passam, automatizado sem identidade recebe Managed Challenge |
+| Política de IA por comportamento (`ai_bots`): busca e agente liberados, treino bloqueado; AI Labyrinth opcional; robots.txt do site (não o gerenciado) | sim | sim |
 | Regras customizadas: `GET`/`HEAD`/`POST` só, mais `custom_rules` | até 5 no total | até 20 |
-| Rate limit no `POST` das `form_paths`, por IP | 10 s, Block por 10 s | 60 s, Managed Challenge |
+| Rate limit por IP, ação `rate_limit_action` (padrão Managed Challenge com `mitigation_timeout = 0`, ou Block) | 1 regra: `POST` das `form_paths` (3 por 10 s) ou, com `form_paths = []`, limite geral nos hostnames (100 por 10 s, fora bots verificados) | 2 regras: formulários (3 por minuto) e limite geral |
 | Rulesets gerenciados | o Free Managed Ruleset roda sozinho | Cloudflare Managed + OWASP Core |
-| Turnstile, Email Routing (destinos verificados, regras para Worker ou encaminhamento), R2 | quando pedidos | quando pedidos |
+| Turnstile, Email Routing (destinos verificados, regras para Worker ou encaminhamento) | quando pedidos | quando pedidos |
+| R2 (`r2_buckets`), com o dev URL `r2.dev` desligado de forma explícita e sem custom domain | quando pedidos | quando pedidos |
 
-Os crawlers de IA podem ler os sites: Bot Fight Mode fica desligado porque nenhuma regra de skip o contorna, e o
-robots.txt de cada site libera search, ai-input e ai-train.
+### Bots e IA
+
+Bot Fight Mode e política de IA são controles separados: liberar crawlers de IA no robots.txt (ou na política
+`ai_bots`) não exige desligar o Bot Fight Mode. A política padrão libera busca (`search`) e agentes (`agent`) e bloqueia
+treino (`training`, que inclui os crawlers mistos de busca e treino); cada uma aceita `allow`, `block` ou
+`only_on_ad_pages`. `ai_bots.labyrinth` liga o AI Labyrinth, que desvia para páginas geradas os crawlers que ignoram o
+robots.txt.
+
+O Bot Fight Mode do Free tem custo:
+
+- Não aceita exceção: nenhuma regra de skip o contorna. Um monitor de disponibilidade ou o smoke test do deploy podem
+  levar desafio; prefira monitores que a Cloudflare reconhece como bot verificado.
+- Ele injeta nas páginas o script de JavaScript Detections. Num site estático com CSP de hashes, o script não tem hash
+  e é bloqueado: aparece como erro de CSP no console, sem afetar o site
+  ([aedis-build/aedis.build#26](https://github.com/aedis-build/aedis.build/issues/26),
+  [aedis-build/aedis-ui#239](https://github.com/aedis-build/aedis-ui/issues/239)). Num site SSR com nonce, a Cloudflare
+  põe o nonce da resposta no script e ele roda.
+
+Quem não aceita esse custo usa `bot_fight_mode = false`. No Pro o módulo desliga o Bot Fight Mode e liga o Super Bot
+Fight Mode.
+
+### Rate limit
+
+A ação padrão é Managed Challenge: quem é gente passa pelo desafio e o contador zera. A API exige
+`mitigation_timeout = 0` com desafio no Free, Pro e Business; com `rate_limit_action = "block"` a ação dura um período
+(10 s no Free). `form_requests_per_period = 3` aceita três envios por IP na janela (10 s no Free, 1 minuto no Pro).
+
+O limite geral (`site_requests_per_period = 100` a cada 10 s, 10 req/s sustentados) cobre todas as rotas e métodos nos
+hostnames, fora os bots verificados (os crawlers de busca liberados). A primeira carga de uma página de um site Next faz
+algumas dezenas de requisições (HTML, chunks, CSS, fontes, imagens e o prefetch dos links), e vários visitantes atrás do
+mesmo NAT dividem o IP; 100 deixa folga para isso e ainda pega um scraper ou uma inundação vinda de um só IP. No Free
+ele só existe quando `form_paths = []`, porque o plano tem uma regra só.
 
 ## Uso
 
@@ -79,13 +111,15 @@ api "/zones/$ZONE_ID/email/routing/rules" | jq -r '.result[] | "\(.matchers[0].v
 
 terraform init
 terraform import 'module.zone.cloudflare_ruleset.custom' "zones/$ZONE_ID/<id da fase http_request_firewall_custom>"
-terraform import 'module.zone.cloudflare_ruleset.rate_limit[0]' "zones/$ZONE_ID/<id da fase http_ratelimit>"
+terraform import 'module.zone.cloudflare_ruleset.rate_limit' "zones/$ZONE_ID/<id da fase http_ratelimit>"
 terraform import 'module.zone.cloudflare_ruleset.managed[0]' "zones/$ZONE_ID/<id da fase http_request_firewall_managed>"   # só no pro
 terraform import 'module.zone.cloudflare_turnstile_widget.this[0]' "$ACCOUNT_ID/<sitekey>"
 terraform import 'module.zone.cloudflare_email_routing_settings.this[0]' "$ZONE_ID"
 terraform import 'module.zone.cloudflare_email_routing_address.this["<email>"]' "$ACCOUNT_ID/<id>"
 terraform import 'module.zone.cloudflare_email_routing_rule.this["<para>"]' "$ZONE_ID/<id>"
 terraform import 'module.zone.cloudflare_r2_bucket.this["<nome>"]' "$ACCOUNT_ID/<nome>/default"
+# cloudflare_r2_managed_domain (o dev URL do bucket) não aceita import no provider 5.28.1 e não precisa: o create é um
+# PUT que só desliga o r2.dev do bucket que já existe.
 terraform plan                          # leia: as regras importadas serão substituídas pelas do módulo
 terraform apply
 ```
@@ -123,8 +157,9 @@ As credenciais do backend vão em `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` 
 
 Troque `plan = "pro"` e rode o plan. Entram o Cloudflare Managed Ruleset e o OWASP Core (o OWASP pontua e bloqueia
 acima do limiar padrão: acompanhe os Security Events na primeira semana e ajuste com `overrides` se houver falso
-positivo), o rate limit passa a janela de 1 minuto com Managed Challenge, cabem até 20 regras customizadas e o Super
-Bot Fight Mode deixa passar os bots verificados e desafia o automatizado sem identidade. Se a fase gerenciada já tiver
+positivo), o rate limit passa a ter as duas regras (formulários em 1 minuto e o limite geral), cabem até 20 regras
+customizadas e o Super Bot Fight Mode substitui o Bot Fight Mode: deixa passar os bots verificados e desafia o
+automatizado sem identidade. Se a fase gerenciada já tiver
 um ruleset criado no painel, importe-o antes (`cloudflare_ruleset.managed[0]`).
 
 ## CI
