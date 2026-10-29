@@ -319,3 +319,21 @@ run "sem_cdn_nem_extras_nao_ha_ruleset_de_cabecalhos" {
     error_message = "a fase de cabeçalhos de resposta só é tocada quando há CDN ou extras"
   }
 }
+
+# O exemplo de referência (examples/complete) planeja sem credenciais, com todas as variáveis e o limite do plano.
+run "exemplo_complete" {
+  command = plan
+
+  module {
+    source = "./examples/complete"
+  }
+
+  variables {
+    origin_verify = "valor-de-teste"
+  }
+
+  assert {
+    condition     = length(module.zone.zone_id) > 0
+    error_message = "o exemplo completo planeja"
+  }
+}
