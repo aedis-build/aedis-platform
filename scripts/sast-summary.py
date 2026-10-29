@@ -47,7 +47,9 @@ def filter_sarif(sarif, accepts):
         for r in run.get("results", []):
             locs = r.get("locations") or [{}]
             path = locs[0].get("physicalLocation", {}).get("artifactLocation", {}).get("uri", "")
-            if not is_accepted(r.get("ruleId"), path, accepts):
+            # A finding the code suppresses in place (nosemgrep) is already out of sast.json and of the gate; the SARIF
+            # keeps it with a `suppressions` entry, which code scanning would still open as an alert.
+            if not r.get("suppressions") and not is_accepted(r.get("ruleId"), path, accepts):
                 kept.append(r)
         run["results"] = kept
     return sarif
@@ -63,6 +65,10 @@ def self_test():
         {"ruleId": "r1", "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/a.cs"}}}]},
         {"ruleId": "r2", "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/b.cs"}}}]}]}]}
     assert [r["ruleId"] for r in filter_sarif(sarif, [{"rule": "r1", "path": "src/", "reason": "x", "until": "2999-01-01"}])["runs"][0]["results"]] == ["r2"]
+    suppressed = {"runs": [{"results": [
+        {"ruleId": "r3", "suppressions": [{"kind": "inSource"}], "locations": [{"physicalLocation": {"artifactLocation": {"uri": "s/c.py"}}}]},
+        {"ruleId": "r4", "suppressions": [], "locations": [{"physicalLocation": {"artifactLocation": {"uri": "s/d.py"}}}]}]}]}
+    assert [r["ruleId"] for r in filter_sarif(suppressed, [])["runs"][0]["results"]] == ["r4"]
     print("self-test ok")
 
 
