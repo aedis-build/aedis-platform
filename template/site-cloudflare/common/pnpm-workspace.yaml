@@ -1,0 +1,11 @@
+# Cadeia de suprimento: sem dependências transitivas de git/tarball/URL; uma versão nova precisa ter uma semana
+# (o mesmo cooldown do Dependabot) antes de ser instalada; uma atualização nunca resolve para versão menor que a do lockfile.
+blockExoticSubdeps: true
+minimumReleaseAge: 10080
+trustPolicy: no-downgrade
+# Advisories transitivas do wrangler (miniflare → undici) e do OpenNext (glob), forçadas para as versões corrigidas
+# depois do cooldown. Tire cada linha quando quem depende delas passar da faixa vulnerável.
+overrides:
+  "undici@>=7.0.0 <7.30.1": 7.30.1
+  "undici@>=8.0.0 <8.12.2": 8.12.2
+  "glob@>=10.2.0 <10.5.0": 10.5.0

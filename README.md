@@ -15,6 +15,7 @@ cobertura de código) em três níveis.
 | `charts/aedis-app` | Chart Helm para `api`, `worker` e `cronjob`: Rollout canário com análise, ExternalSecret por cofre, identidade de workload (IRSA / Azure Workload Identity), KEDA/HPA, PDB, NetworkPolicy anti-SSRF, presets de ingress (nginx, ALB, AGIC, Kong) e de observabilidade (Datadog, Dynatrace, Splunk, New Relic), tudo opcional e desligado por padrão |
 | `template/tenant` | Esqueleto do repositório GitOps do cliente (`platform/values`, `apps/`, ApplicationSet, workflows) |
 | `template/site` | Site Next.js com Aedis UI (`aedis platform new-site`): Dockerfile distroless, `proxy.ts` com os cabeçalhos de segurança, CI do `aedis-ci` com `language: node` e `release.yml` da imagem, `type: site` no chart |
+| `template/site-cloudflare` | Camadas do `new-site --target cloudflare` sobre o `template/site` (`common/`, `static/`, `ssr/`): `wrangler.jsonc` com domínio próprio, `open-next.config.ts` no SSR, `deploy.yml` chamando o `deploy-site.yml` e DAST no `wrangler dev`; sem Dockerfile nem chart |
 | `scripts/` | `validate-apps.sh` (render + schema + kubeconform + sumário JSON), `render-tenant-template.sh`, `release-notes.py` |
 | `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-site`, `release-registry-js`, `release-npm`, `release-cut`, `release-tag`, `visual-regression`; em seguida `promote`) |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |

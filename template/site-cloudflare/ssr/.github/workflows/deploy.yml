@@ -1,0 +1,41 @@
+# Deploy na borda da Cloudflare pelo reutilizável deploy-site do Aedis Platform: build do OpenNext isolado, SBOM,
+# atestação (SLSA Build L3) e publicação exatamente dos bytes atestados como versão do Worker, seguida do smoke test.
+# Rollback: rode este workflow à mão com o id de uma versão anterior. Os segredos ficam no environment prd do GitHub
+# (só main, aprovador obrigatório) e são declarados um a um: nunca `secrets: inherit`.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version-id:
+        description: Rollback para esta versão do Worker (vazio = deploy normal)
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-site.yml@__AEDIS_PLATFORM_PIN__
+    # pull-requests e actions são dos jobs de preview e rollback do reutilizável: o GitHub as exige mesmo sem rodá-los.
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      pull-requests: write
+      actions: read
+    with:
+      type: ssr
+      name: __AEDIS_NAME__
+      url: https://__AEDIS_DOMAIN__
+      rollback-version-id: ${{ inputs.version-id }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RUNTIME_SECRETS: ${{ secrets.RUNTIME_SECRETS }}
+      SMOKE_HEADER: ${{ secrets.SMOKE_HEADER }}
