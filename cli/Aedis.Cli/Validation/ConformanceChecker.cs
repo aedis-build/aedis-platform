@@ -100,7 +100,8 @@ public static partial class ConformanceChecker
     ///     Linhas <c>uses: aedis-build/aedis-platform/...</c> e das actions do Aedis (<c>aedis-release-cut</c>, <c>aedis-dast</c>,
     ///     <c>aedis-conformance</c>, <c>aedis-sca</c>, <c>aedis-deploy-cloudflare</c>) dos workflows do repo que não pinam o SHA de uma tag de
     ///     release (<c>@&lt;sha&gt; # vX.Y.Z</c>): uma tag solta, uma branch ou um SHA sem a tag no comentário, que o
-    ///     Dependabot não acompanha. Vazio quando todos cumprem, ou quando não há workflows.
+    ///     Dependabot não acompanha. Linhas de comentário (exemplos de uso na documentação do workflow) não contam. Vazio
+    ///     quando todos cumprem, ou quando não há workflows.
     /// </summary>
     public static IReadOnlyList<string> UnreleasedPlatformPins(string root) {
         var dir = Path.Combine(root, ".github", "workflows");
@@ -109,6 +110,7 @@ public static partial class ConformanceChecker
         foreach (var file in Directory.EnumerateFiles(dir).Where(f => f.EndsWith(".yml", StringComparison.Ordinal) || f.EndsWith(".yaml", StringComparison.Ordinal)).Order(StringComparer.Ordinal)) {
             var lines = File.ReadAllLines(file);
             for (var i = 0; i < lines.Length; i++) {
+                if (lines[i].TrimStart().StartsWith('#')) continue;
                 var match = PlatformUses().Match(lines[i]);
                 if (!match.Success) continue;
                 if (Sha40().IsMatch(match.Groups["ref"].Value) && ReleaseTag().IsMatch(match.Groups["comment"].Value)) continue;

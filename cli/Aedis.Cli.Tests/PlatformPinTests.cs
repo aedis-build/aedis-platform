@@ -43,6 +43,7 @@ public sealed class PlatformPinTests
         Directory.CreateDirectory(workflows);
         try {
             File.WriteAllText(Path.Combine(workflows, "ci.yml"), """
+                #   uses: aedis-build/aedis-platform/.github/workflows/validate.yml@<sha da tag> # vX.Y.Z
                 jobs:
                   ok:
                     uses: aedis-build/aedis-platform/.github/workflows/aedis-ci.yml@0123456789abcdef0123456789abcdef01234567 # v1.2.3
@@ -62,12 +63,12 @@ public sealed class PlatformPinTests
             var offenders = ConformanceChecker.UnreleasedPlatformPins(root);
 
             offenders.Should().BeEquivalentTo([
-                ".github/workflows/ci.yml:5 @0123456789abcdef0123456789abcdef01234567",
-                ".github/workflows/ci.yml:7 @v1",
-                ".github/workflows/ci.yml:10 @0123456789abcdef0123456789abcdef01234567",
-                ".github/workflows/ci.yml:11 @v1",
-                ".github/workflows/ci.yml:12 @0123456789abcdef0123456789abcdef01234567",
-                ".github/workflows/ci.yml:13 @0123456789abcdef0123456789abcdef01234567"
+                ".github/workflows/ci.yml:6 @0123456789abcdef0123456789abcdef01234567",
+                ".github/workflows/ci.yml:8 @v1",
+                ".github/workflows/ci.yml:11 @0123456789abcdef0123456789abcdef01234567",
+                ".github/workflows/ci.yml:12 @v1",
+                ".github/workflows/ci.yml:13 @0123456789abcdef0123456789abcdef01234567",
+                ".github/workflows/ci.yml:14 @0123456789abcdef0123456789abcdef01234567"
             ]);
             ConformanceChecker.UnreleasedPlatformPins(Path.Combine(root, "sem-workflows")).Should().BeEmpty();
         }
