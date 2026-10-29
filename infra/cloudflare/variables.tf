@@ -133,3 +133,39 @@ variable "r2_buckets" {
   type        = list(string)
   default     = []
 }
+
+variable "cdn" {
+  description = <<-EOT
+    CDNs servidas direto de um bucket R2 por domínio próprio, sem Worker. Para cada uma: o bucket (com o dev URL
+    r2.dev desligado), o domínio próprio na zona, duas regras no ruleset custom (só GET e HEAD; hotlink: Referer vazio
+    ou de allowed_referers e subdomínios passa, o resto leva block) e os cabeçalhos de segurança da CDN, com headers
+    sobrepondo ou somando. manage_domain = false deixa o domínio fora do Terraform (o provider não o importa).
+  EOT
+  type = list(object({
+    hostname         = string
+    bucket           = string
+    allowed_referers = list(string)
+    headers          = optional(map(string), {})
+    manage_domain    = optional(bool, true)
+  }))
+  default = []
+
+  validation {
+    condition     = alltrue(flatten([for c in var.cdn : [for d in c.allowed_referers : can(regex("^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)+$", d))]]))
+    error_message = "allowed_referers são domínios (ex. aedis.build), sem esquema, caminho nem curinga."
+  }
+}
+
+variable "response_headers" {
+  description = <<-EOT
+    Cabeçalhos de resposta extras, por expressão, no mesmo ruleset da fase http_response_headers_transform que leva os
+    da CDN: a fase tem um ruleset só por zona, então todo cabeçalho de resposta da zona passa por aqui.
+  EOT
+  type = list(object({
+    description = string
+    expression  = string
+    headers     = map(string)
+    ref         = optional(string)
+  }))
+  default = []
+}

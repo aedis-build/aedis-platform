@@ -277,7 +277,9 @@ bloqueado), dois controles separados; uma regra customizada que só aceita `GET`
 suas até o limite do plano (5 no Free); rate limit por IP com Managed Challenge (ou Block), que no Free é uma regra só:
 o `POST` das rotas de formulário (3 por 10 s) ou, sem formulário, um limite geral nos hostnames (100 por 10 s); no Pro,
 as duas regras, o Cloudflare Managed Ruleset e o OWASP Core; Turnstile, Email Routing e buckets R2 (dev URL desligado)
-quando pedidos. O custo do Bot Fight Mode para monitores e para a CSP de hashes está no README do módulo.
+quando pedidos; uma CDN servida de um bucket R2 por domínio próprio (`cdn`), com regras de métodos e hotlink e
+cabeçalhos de segurança no ruleset único de cabeçalhos de resposta da zona, que também leva os extras de
+`response_headers`. O custo do Bot Fight Mode para monitores e para a CSP de hashes está no README do módulo.
 
 ```hcl
 # infra/cloudflare/main.tf no repositório do site

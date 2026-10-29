@@ -14,6 +14,56 @@ locals {
   # Limite de regras customizadas por plano; a regra de métodos do módulo conta.
   custom_rule_limit = local.pro ? 20 : 5
 
+  cdn = { for c in var.cdn : c.hostname => c }
+
+  # Objetos estáticos sem script nem formulário, embutidos só por páginas do mesmo site (CORP same-site).
+  cdn_default_headers = {
+    "Content-Security-Policy"      = "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+    "Cross-Origin-Resource-Policy" = "same-site"
+    "Referrer-Policy"              = "no-referrer"
+    "X-Content-Type-Options"       = "nosniff"
+  }
+
+  # Duas regras por CDN no ruleset custom (contam no limite do plano). Hotlink: Referer vazio passa (o camo do GitHub
+  # e quem usa no-referrer); Referer de um domínio permitido ou de subdomínio dele passa; o resto leva block. O wildcard
+  # (todo plano; o matches é Business) casa a URL inteira e exige "/" logo depois do host, então evilaedis.build e
+  # aedis.build.evil.com não passam.
+  cdn_rules = flatten([for h, c in local.cdn : [
+    {
+      ref         = "aedis_cdn_methods_${replace(h, ".", "_")}"
+      description = "CDN ${h}: só GET e HEAD"
+      expression  = "http.host eq ${jsonencode(h)} and not http.request.method in {\"GET\" \"HEAD\"}"
+      action      = "block"
+    },
+    {
+      ref         = "aedis_cdn_hotlink_${replace(h, ".", "_")}"
+      description = "CDN ${h}: hotlink de outro site"
+      expression = join(" ", compact([
+        "http.host eq ${jsonencode(h)} and http.referer ne \"\"",
+        length(c.allowed_referers) == 0 ? "" : "and not (${join(" or ", flatten([for d in c.allowed_referers : ["http.referer wildcard \"https://${d}/*\"", "http.referer wildcard \"https://*.${d}/*\""]]))})",
+      ]))
+      action = "block"
+    },
+  ]])
+
+  # Um ruleset por fase na zona: os cabeçalhos da CDN e os extras (var.response_headers) moram no mesmo.
+  response_header_rules = concat(
+    [for h, c in local.cdn : {
+      ref               = "aedis_cdn_headers_${replace(h, ".", "_")}"
+      description       = "CDN ${h}: cabeçalhos de segurança"
+      expression        = "http.host eq ${jsonencode(h)}"
+      action            = "rewrite"
+      action_parameters = { headers = { for name, value in merge(local.cdn_default_headers, c.headers) : name => { operation = "set", value = value } } }
+    }],
+    [for r in var.response_headers : {
+      ref               = coalesce(r.ref, "headers_${md5(r.expression)}")
+      description       = r.description
+      expression        = r.expression
+      action            = "rewrite"
+      action_parameters = { headers = { for name, value in r.headers : name => { operation = "set", value = value } } }
+    }],
+  )
+
   hosts      = "http.host in {${join(" ", [for h in var.hostnames : jsonencode(h)])}}"
   form_paths = "http.request.uri.path in {${join(" ", [for p in var.form_paths : jsonencode(p)])}}"
 
@@ -113,14 +163,24 @@ resource "cloudflare_ruleset" "custom" {
       expression  = "${local.hosts} and not http.request.method in {\"GET\" \"HEAD\" \"POST\"}"
       action      = "block"
     }
-  ], [for r in var.custom_rules : merge(r, { ref = coalesce(r.ref, "custom_${md5(r.expression)}") })])
+  ], local.cdn_rules, [for r in var.custom_rules : merge(r, { ref = coalesce(r.ref, "custom_${md5(r.expression)}") })])
 
   lifecycle {
     precondition {
-      condition     = length(var.custom_rules) + 1 <= local.custom_rule_limit
-      error_message = "O plano ${var.plan} aceita ${local.custom_rule_limit} regras customizadas; a regra de métodos do módulo ocupa uma."
+      condition     = 1 + length(local.cdn_rules) + length(var.custom_rules) <= local.custom_rule_limit
+      error_message = "O plano ${var.plan} aceita ${local.custom_rule_limit} regras customizadas: a de métodos do módulo ocupa uma, cada CDN ocupa duas (métodos e hotlink) e custom_rules tem ${length(var.custom_rules)}."
     }
   }
+}
+
+resource "cloudflare_ruleset" "response_headers" {
+  count       = length(local.response_header_rules) > 0 ? 1 : 0
+  zone_id     = local.zone_id
+  kind        = "zone"
+  phase       = "http_response_headers_transform"
+  name        = "aedis: cabeçalhos de resposta"
+  description = "Gerenciado pelo módulo infra/cloudflare do Aedis Platform"
+  rules       = local.response_header_rules
 }
 
 # Até a v1.4 o ruleset tinha count (sem form_paths não havia regra); o moved leva o estado antigo sem recriar.
@@ -205,7 +265,7 @@ resource "cloudflare_email_routing_rule" "this" {
 }
 
 resource "cloudflare_r2_bucket" "this" {
-  for_each   = toset(var.r2_buckets)
+  for_each   = toset(concat(var.r2_buckets, [for c in var.cdn : c.bucket]))
   account_id = local.account_id
   name       = each.value
 }
@@ -216,4 +276,23 @@ resource "cloudflare_r2_managed_domain" "this" {
   account_id  = local.account_id
   bucket_name = each.value.name
   enabled     = false
+}
+
+# Domínio próprio do bucket de cada CDN, na zona, com TLS 1.2. O provider não importa este recurso: um domínio que já
+# existe no painel fica de fora com manage_domain = false até a janela de migração (README).
+resource "cloudflare_r2_custom_domain" "cdn" {
+  for_each    = { for h, c in local.cdn : h => c if c.manage_domain }
+  account_id  = local.account_id
+  zone_id     = local.zone_id
+  bucket_name = cloudflare_r2_bucket.this[each.value.bucket].name
+  domain      = each.key
+  enabled     = true
+  min_tls     = "1.2"
+
+  lifecycle {
+    precondition {
+      condition     = each.key == var.zone_name || endswith(each.key, ".${var.zone_name}")
+      error_message = "O hostname da CDN ${each.key} precisa estar na zona ${var.zone_name}."
+    }
+  }
 }
