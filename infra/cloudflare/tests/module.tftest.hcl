@@ -18,16 +18,28 @@ run "free_sem_formulario" {
   command = plan
 
   assert {
-    condition     = length(cloudflare_ruleset.rate_limit) == 0 && length(cloudflare_ruleset.managed) == 0
-    error_message = "sem form_paths não há rate limit, e o free não declara rulesets gerenciados"
+    condition     = length(cloudflare_ruleset.managed) == 0
+    error_message = "o free não declara rulesets gerenciados"
+  }
+  assert {
+    condition     = length(cloudflare_ruleset.rate_limit.rules) == 1 && cloudflare_ruleset.rate_limit.rules[0].ref == "aedis_site_rate_limit" && cloudflare_ruleset.rate_limit.rules[0].expression == "http.host in {\"aedis.build\" \"ui.aedis.build\"} and not cf.client.bot"
+    error_message = "sem form_paths a única regra do free é o limite geral por IP nos hostnames, fora bots verificados"
+  }
+  assert {
+    condition     = cloudflare_ruleset.rate_limit.rules[0].action == "managed_challenge" && cloudflare_ruleset.rate_limit.rules[0].ratelimit.mitigation_timeout == 0 && cloudflare_ruleset.rate_limit.rules[0].ratelimit.period == 10 && cloudflare_ruleset.rate_limit.rules[0].ratelimit.requests_per_period == 100
+    error_message = "o limite geral desafia (mitigation_timeout 0), 100 por 10 s"
   }
   assert {
     condition     = cloudflare_ruleset.custom.rules[0].expression == "http.host in {\"aedis.build\" \"ui.aedis.build\"} and not http.request.method in {\"GET\" \"HEAD\" \"POST\"}" && cloudflare_ruleset.custom.rules[0].action == "block"
     error_message = "a regra de métodos bloqueia o que não é GET, HEAD ou POST nos hostnames"
   }
   assert {
-    condition     = cloudflare_bot_management.this.fight_mode == false && cloudflare_bot_management.this.ai_bots_protection == "disabled"
-    error_message = "Bot Fight Mode desligado e IA liberada"
+    condition     = cloudflare_bot_management.this.fight_mode == true && cloudflare_bot_management.this.ai_bots_protection == "disabled" && cloudflare_bot_management.this.crawler_protection == "disabled"
+    error_message = "Bot Fight Mode ligado por padrão, regra legada de IA e labirinto desligados"
+  }
+  assert {
+    condition     = cloudflare_bot_management.this.aisearch == "disabled" && cloudflare_bot_management.this.ai_user == "disabled" && cloudflare_bot_management.this.ai_training == "block"
+    error_message = "política de IA padrão: busca e agente liberados, treino bloqueado"
   }
   assert {
     condition     = cloudflare_zone_setting.min_tls_version.value == "1.2" && cloudflare_zone_setting.always_use_https.value == "on" && cloudflare_zone_setting.hsts.value.strict_transport_security.enabled
@@ -51,15 +63,15 @@ run "free_com_formulario_turnstile_email_r2" {
       addresses = ["propostas@example.com"]
       rules     = [{ to = "contato@rlfn.studio", worker = "rlfn-studio" }]
     }
-    r2_buckets = ["rlfn-media"]
+    r2_buckets = ["rlfn-media", "rlfn-backups"]
   }
 
   assert {
-    condition     = cloudflare_ruleset.rate_limit[0].rules[0].action == "block" && cloudflare_ruleset.rate_limit[0].rules[0].ratelimit.period == 10 && cloudflare_ruleset.rate_limit[0].rules[0].ratelimit.mitigation_timeout == 10
-    error_message = "no free o rate limit é 10 s e Block"
+    condition     = length(cloudflare_ruleset.rate_limit.rules) == 1 && cloudflare_ruleset.rate_limit.rules[0].action == "managed_challenge" && cloudflare_ruleset.rate_limit.rules[0].ratelimit.period == 10 && cloudflare_ruleset.rate_limit.rules[0].ratelimit.mitigation_timeout == 0 && cloudflare_ruleset.rate_limit.rules[0].ratelimit.requests_per_period == 3
+    error_message = "no free com formulário, a única regra é a dos formulários: 3 por 10 s com desafio"
   }
   assert {
-    condition     = strcontains(cloudflare_ruleset.rate_limit[0].rules[0].expression, "http.request.method eq \"POST\" and http.request.uri.path in {\"/api/proposals\"}")
+    condition     = strcontains(cloudflare_ruleset.rate_limit.rules[0].expression, "http.request.method eq \"POST\" and http.request.uri.path in {\"/api/proposals\"}")
     error_message = "o rate limit cobre o POST das form_paths"
   }
   assert {
@@ -73,6 +85,10 @@ run "free_com_formulario_turnstile_email_r2" {
   assert {
     condition     = cloudflare_r2_bucket.this["rlfn-media"].account_id == "f037e56e89293a057740de681ac9abbe"
     error_message = "bucket R2 na conta da zona"
+  }
+  assert {
+    condition     = length(cloudflare_r2_managed_domain.this) == 2 && alltrue([for d in cloudflare_r2_managed_domain.this : d.enabled == false])
+    error_message = "todo bucket R2 com o dev URL (r2.dev) desligado de forma explícita"
   }
 }
 
@@ -89,12 +105,12 @@ run "pro" {
     error_message = "o pro executa o Cloudflare Managed e o OWASP"
   }
   assert {
-    condition     = cloudflare_ruleset.rate_limit[0].rules[0].action == "managed_challenge" && cloudflare_ruleset.rate_limit[0].rules[0].ratelimit.period == 60 && cloudflare_ruleset.rate_limit[0].rules[0].ratelimit.mitigation_timeout == 0
-    error_message = "no pro o rate limit desafia (mitigation_timeout 0, exigido para desafio)"
+    condition     = [for r in cloudflare_ruleset.rate_limit.rules : r.ref] == ["aedis_form_rate_limit", "aedis_site_rate_limit"] && cloudflare_ruleset.rate_limit.rules[0].ratelimit.period == 60 && cloudflare_ruleset.rate_limit.rules[0].ratelimit.mitigation_timeout == 0
+    error_message = "o pro usa as duas regras: formulários (60 s) e limite geral, com desafio"
   }
   assert {
     condition     = cloudflare_bot_management.this.fight_mode == false && cloudflare_bot_management.this.sbfm_verified_bots == "allow"
-    error_message = "no pro os bots verificados (crawlers de IA) passam"
+    error_message = "no pro o Super Bot Fight Mode substitui o Bot Fight Mode e os bots verificados passam"
   }
 }
 
@@ -129,4 +145,44 @@ run "regra_de_email_com_worker_e_forward" {
   }
 
   expect_failures = [var.email_routing]
+}
+
+run "block_e_politicas_configuraveis" {
+  command = plan
+
+  variables {
+    form_paths        = ["/api/contato"]
+    rate_limit_action = "block"
+    bot_fight_mode    = false
+    ai_bots           = { search = "allow", agent = "only_on_ad_pages", training = "allow", labyrinth = true }
+  }
+
+  assert {
+    condition     = cloudflare_ruleset.rate_limit.rules[0].action == "block" && cloudflare_ruleset.rate_limit.rules[0].ratelimit.mitigation_timeout == 10
+    error_message = "com block, a ação dura um período (10 s no free)"
+  }
+  assert {
+    condition     = cloudflare_bot_management.this.fight_mode == false && cloudflare_bot_management.this.ai_user == "only_on_ad_pages" && cloudflare_bot_management.this.ai_training == "disabled" && cloudflare_bot_management.this.crawler_protection == "enabled"
+    error_message = "bot_fight_mode e ai_bots chegam ao bot_management"
+  }
+}
+
+run "acao_de_rate_limit_invalida" {
+  command = plan
+
+  variables {
+    rate_limit_action = "js_challenge"
+  }
+
+  expect_failures = [var.rate_limit_action]
+}
+
+run "politica_de_ia_invalida" {
+  command = plan
+
+  variables {
+    ai_bots = { training = "disallow" }
+  }
+
+  expect_failures = [var.ai_bots]
 }

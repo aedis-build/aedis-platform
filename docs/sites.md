@@ -272,10 +272,12 @@ aplica juntas.
 
 A zona onde o site é servido tem a sua postura de segurança no módulo Terraform
 [`infra/cloudflare`](../infra/cloudflare/README.md) (provider `cloudflare/cloudflare` v5): TLS mínimo 1.2, Always Use
-HTTPS e HSTS; Bot Fight Mode desligado e IA liberada (os crawlers de IA podem ler os sites); uma regra customizada que
-só aceita `GET`, `HEAD` e `POST` nos hostnames, mais as suas até o limite do plano (5 no Free); a única regra de rate
-limit do Free no `POST` das rotas de formulário (10 s, Block), que no Pro vira Managed Challenge em 1 minuto; no Pro,
-o Cloudflare Managed Ruleset e o OWASP Core; Turnstile, Email Routing e buckets R2 quando pedidos.
+HTTPS e HSTS; Bot Fight Mode ligado por padrão e política de IA por comportamento (busca e agentes liberados, treino
+bloqueado), dois controles separados; uma regra customizada que só aceita `GET`, `HEAD` e `POST` nos hostnames, mais as
+suas até o limite do plano (5 no Free); rate limit por IP com Managed Challenge (ou Block), que no Free é uma regra só:
+o `POST` das rotas de formulário (3 por 10 s) ou, sem formulário, um limite geral nos hostnames (100 por 10 s); no Pro,
+as duas regras, o Cloudflare Managed Ruleset e o OWASP Core; Turnstile, Email Routing e buckets R2 (dev URL desligado)
+quando pedidos. O custo do Bot Fight Mode para monitores e para a CSP de hashes está no README do módulo.
 
 ```hcl
 # infra/cloudflare/main.tf no repositório do site

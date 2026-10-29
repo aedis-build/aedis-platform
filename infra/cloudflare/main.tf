@@ -17,6 +17,39 @@ locals {
   hosts      = "http.host in {${join(" ", [for h in var.hostnames : jsonencode(h)])}}"
   form_paths = "http.request.uri.path in {${join(" ", [for p in var.form_paths : jsonencode(p)])}}"
 
+  ai_policy = { allow = "disabled", block = "block", only_on_ad_pages = "only_on_ad_pages" }
+
+  # Rate limit: com desafio, a API do Free, Pro e Business exige mitigation_timeout 0 (o desafio zera o contador);
+  # com Block, a ação dura um período.
+  challenge = var.rate_limit_action == "managed_challenge"
+  form_rate_limit = {
+    ref         = "aedis_form_rate_limit"
+    description = "POST nas rotas de formulário"
+    expression  = "${local.hosts} and http.request.method eq \"POST\" and ${local.form_paths}"
+    action      = var.rate_limit_action
+    ratelimit = {
+      characteristics     = ["cf.colo.id", "ip.src"]
+      period              = local.pro ? 60 : 10
+      requests_per_period = var.form_requests_per_period
+      mitigation_timeout  = local.challenge ? 0 : (local.pro ? 60 : 10)
+    }
+  }
+  # Limite geral por IP nos hostnames, fora os bots verificados (os crawlers de busca liberados pela política de IA).
+  site_rate_limit = {
+    ref         = "aedis_site_rate_limit"
+    description = "Requisições por IP nos hostnames"
+    expression  = "${local.hosts} and not cf.client.bot"
+    action      = var.rate_limit_action
+    ratelimit = {
+      characteristics     = ["cf.colo.id", "ip.src"]
+      period              = 10
+      requests_per_period = var.site_requests_per_period
+      mitigation_timeout  = local.challenge ? 0 : 10
+    }
+  }
+  # O Free tem uma regra: a dos formulários quando há form_paths, senão o limite geral. O Pro tem duas: as duas.
+  rate_limit_rules = length(var.form_paths) == 0 ? [local.site_rate_limit] : (local.pro ? [local.form_rate_limit, local.site_rate_limit] : [local.form_rate_limit])
+
   # IDs públicos dos rulesets gerenciados (iguais em toda conta).
   cloudflare_managed_ruleset = "efb7b8c949ac4650a09736fc376e9aee"
   owasp_core_ruleset         = "4814384a9e5d4991b9815dcfc25d2f1f"
@@ -48,14 +81,18 @@ resource "cloudflare_zone_setting" "hsts" {
   }
 }
 
-# Os crawlers de IA podem ler os sites (o robots.txt de cada site libera search, ai-input e ai-train): Bot Fight Mode
-# desligado, porque nenhuma regra de skip o contorna, e nenhum bloqueio de IA. No Pro, o Super Bot Fight Mode deixa
-# passar bots verificados (os crawlers de IA declarados) e desafia só o tráfego automatizado sem identidade.
+# Bot Fight Mode e política de IA são controles separados: liberar um crawler de IA no robots.txt não exige desligar o
+# Bot Fight Mode. No Free ele desafia bots conhecidos sem aceitar exceção (README: custo para monitores e para a CSP de
+# hashes). No Pro quem age é o Super Bot Fight Mode: bots verificados passam e o automatizado sem identidade é desafiado.
+# A política de IA (Search, Agent, Training) vale nos dois planos: "allow" vira "disabled" (nenhum bloqueio).
 resource "cloudflare_bot_management" "this" {
   zone_id                         = local.zone_id
-  fight_mode                      = false
+  fight_mode                      = local.pro ? false : var.bot_fight_mode
   ai_bots_protection              = "disabled"
-  crawler_protection              = "disabled"
+  aisearch                        = local.ai_policy[var.ai_bots.search]
+  ai_user                         = local.ai_policy[var.ai_bots.agent]
+  ai_training                     = local.ai_policy[var.ai_bots.training]
+  crawler_protection              = var.ai_bots.labyrinth ? "enabled" : "disabled"
   is_robots_txt_managed           = false
   sbfm_verified_bots              = local.pro ? "allow" : null
   sbfm_definitely_automated       = local.pro ? "managed_challenge" : null
@@ -86,29 +123,19 @@ resource "cloudflare_ruleset" "custom" {
   }
 }
 
-# A única regra de rate limit do Free: POST nas rotas de formulário, por IP. Free = janela de 10 s e Block por 10 s;
-# Pro = janela de 1 min e Managed Challenge (no Free e no Pro, desafio só com mitigation_timeout 0).
+# Até a v1.4 o ruleset tinha count (sem form_paths não havia regra); o moved leva o estado antigo sem recriar.
+moved {
+  from = cloudflare_ruleset.rate_limit[0]
+  to   = cloudflare_ruleset.rate_limit
+}
+
 resource "cloudflare_ruleset" "rate_limit" {
-  count       = length(var.form_paths) > 0 ? 1 : 0
   zone_id     = local.zone_id
   kind        = "zone"
   phase       = "http_ratelimit"
-  name        = "aedis: rate limit dos formulários"
+  name        = "aedis: rate limit"
   description = "Gerenciado pelo módulo infra/cloudflare do Aedis Platform"
-  rules = [
-    {
-      ref         = "aedis_form_rate_limit"
-      description = "POST nas rotas de formulário"
-      expression  = "${local.hosts} and http.request.method eq \"POST\" and ${local.form_paths}"
-      action      = local.pro ? "managed_challenge" : "block"
-      ratelimit = {
-        characteristics     = ["cf.colo.id", "ip.src"]
-        period              = local.pro ? 60 : 10
-        requests_per_period = var.form_requests_per_period
-        mitigation_timeout  = local.pro ? 0 : 10
-      }
-    }
-  ]
+  rules       = local.rate_limit_rules
 }
 
 # No Free o Free Managed Ruleset já roda sozinho e não é configurável; o Pro executa o Cloudflare Managed e o OWASP.
@@ -181,4 +208,12 @@ resource "cloudflare_r2_bucket" "this" {
   for_each   = toset(var.r2_buckets)
   account_id = local.account_id
   name       = each.value
+}
+
+# O dev URL (r2.dev) de todo bucket fica desligado de forma explícita; nenhum custom domain de R2 é criado aqui.
+resource "cloudflare_r2_managed_domain" "this" {
+  for_each    = cloudflare_r2_bucket.this
+  account_id  = local.account_id
+  bucket_name = each.value.name
+  enabled     = false
 }
