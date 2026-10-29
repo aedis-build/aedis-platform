@@ -186,3 +186,136 @@ run "politica_de_ia_invalida" {
 
   expect_failures = [var.ai_bots]
 }
+
+# CDN do aedis.build: bucket R2 por domínio próprio, regras no mesmo ruleset custom e cabeçalhos de resposta.
+run "cdn" {
+  command = plan
+
+  variables {
+    r2_buckets = ["aedis-cdn"]
+    cdn = [{
+      hostname         = "cdn.aedis.build"
+      bucket           = "aedis-cdn"
+      allowed_referers = ["aedis.build"]
+      headers          = { "Referrer-Policy" = "same-origin", "Timing-Allow-Origin" = "https://aedis.build" }
+    }]
+    response_headers = [{ description = "extra", expression = "http.host eq \"aedis.build\"", headers = { "X-Extra" = "1" } }]
+  }
+
+  assert {
+    condition     = [for r in cloudflare_ruleset.custom.rules : r.ref] == ["aedis_methods", "aedis_cdn_methods_cdn_aedis_build", "aedis_cdn_hotlink_cdn_aedis_build"]
+    error_message = "as regras da CDN entram no mesmo ruleset custom, depois da regra de métodos do módulo"
+  }
+  assert {
+    condition     = cloudflare_ruleset.custom.rules[1].expression == "http.host eq \"cdn.aedis.build\" and not http.request.method in {\"GET\" \"HEAD\"}" && cloudflare_ruleset.custom.rules[1].action == "block"
+    error_message = "a CDN só aceita GET e HEAD"
+  }
+  assert {
+    condition     = startswith(cloudflare_ruleset.custom.rules[2].expression, "http.host eq \"cdn.aedis.build\" and http.referer ne \"\" and not (") && cloudflare_ruleset.custom.rules[2].action == "block"
+    error_message = "Referer vazio passa: a regra de hotlink só olha requisições com Referer"
+  }
+  # O wildcard da Cloudflare (case-insensitive, * = zero ou mais caracteres, casa o valor inteiro) emulado em RE2 sobre
+  # os padrões gerados: o domínio e os subdomínios passam, os parecidos não.
+  assert {
+    condition = alltrue([for referer in ["https://aedis.build/", "https://aedis.build/docs/x", "https://ui.aedis.build/", "https://a.b.aedis.build/p", "https://AEDIS.build/"] :
+      anytrue([for p in flatten(regexall("wildcard \"([^\"]+)\"", cloudflare_ruleset.custom.rules[2].expression)) : can(regex("^(?i)${replace(replace(p, ".", "\\."), "*", ".*")}$", referer))])
+    ])
+    error_message = "Referer do domínio permitido ou de subdomínio dele precisa passar"
+  }
+  assert {
+    condition = alltrue([for referer in ["https://evilaedis.build/", "https://aedis.build.evil.com/", "https://evil.com/", "http://aedis.build/", "https://aedis.builder/"] :
+      !anytrue([for p in flatten(regexall("wildcard \"([^\"]+)\"", cloudflare_ruleset.custom.rules[2].expression)) : can(regex("^(?i)${replace(replace(p, ".", "\\."), "*", ".*")}$", referer))])
+    ])
+    error_message = "domínio parecido ou de outro site não passa"
+  }
+  assert {
+    condition     = length(cloudflare_r2_bucket.this) == 1 && cloudflare_r2_managed_domain.this["aedis-cdn"].enabled == false
+    error_message = "o bucket da CDN não duplica com r2_buckets e fica com o dev URL desligado"
+  }
+  assert {
+    condition     = cloudflare_r2_custom_domain.cdn["cdn.aedis.build"].domain == "cdn.aedis.build" && cloudflare_r2_custom_domain.cdn["cdn.aedis.build"].bucket_name == "aedis-cdn" && cloudflare_r2_custom_domain.cdn["cdn.aedis.build"].enabled && cloudflare_r2_custom_domain.cdn["cdn.aedis.build"].min_tls == "1.2"
+    error_message = "domínio próprio do R2 na zona, com TLS 1.2"
+  }
+  assert {
+    condition     = cloudflare_ruleset.response_headers[0].phase == "http_response_headers_transform" && length(cloudflare_ruleset.response_headers[0].rules) == 2 && cloudflare_ruleset.response_headers[0].rules[0].expression == "http.host eq \"cdn.aedis.build\""
+    error_message = "um ruleset só na fase de cabeçalhos de resposta, com a regra da CDN e a extra"
+  }
+  assert {
+    condition = (cloudflare_ruleset.response_headers[0].rules[0].action_parameters.headers["Content-Security-Policy"].value == "default-src 'none'; style-src 'unsafe-inline'; sandbox"
+      && cloudflare_ruleset.response_headers[0].rules[0].action_parameters.headers["Cross-Origin-Resource-Policy"].value == "same-site"
+      && cloudflare_ruleset.response_headers[0].rules[0].action_parameters.headers["X-Content-Type-Options"].value == "nosniff"
+      && cloudflare_ruleset.response_headers[0].rules[0].action_parameters.headers["Referrer-Policy"].value == "same-origin"
+    && cloudflare_ruleset.response_headers[0].rules[0].action_parameters.headers["Timing-Allow-Origin"].operation == "set")
+    error_message = "cabeçalhos padrão da CDN, com os de headers sobrepondo ou somando"
+  }
+  assert {
+    condition     = cloudflare_ruleset.response_headers[0].rules[1].action_parameters.headers["X-Extra"].value == "1" && cloudflare_ruleset.response_headers[0].rules[1].action == "rewrite"
+    error_message = "cabeçalhos extras por expressão no mesmo ruleset"
+  }
+}
+
+run "cdn_sem_referer_permitido_so_aceita_referer_vazio" {
+  command = plan
+
+  variables {
+    cdn = [{ hostname = "cdn.aedis.build", bucket = "b", allowed_referers = [] }]
+  }
+
+  assert {
+    condition     = cloudflare_ruleset.custom.rules[2].expression == "http.host eq \"cdn.aedis.build\" and http.referer ne \"\""
+    error_message = "sem allowed_referers, só Referer vazio passa"
+  }
+}
+
+run "cdn_com_dominio_fora_do_terraform" {
+  command = plan
+
+  variables {
+    cdn = [{ hostname = "cdn.aedis.build", bucket = "aedis-cdn", allowed_referers = ["aedis.build"], manage_domain = false }]
+  }
+
+  assert {
+    condition     = length(cloudflare_r2_custom_domain.cdn) == 0 && cloudflare_r2_managed_domain.this["aedis-cdn"].enabled == false && length(cloudflare_ruleset.custom.rules) == 3
+    error_message = "manage_domain = false tira só o domínio próprio; dev URL, regras e cabeçalhos continuam"
+  }
+}
+
+run "cdn_estoura_o_limite_do_free" {
+  command = plan
+
+  variables {
+    cdn          = [{ hostname = "cdn.aedis.build", bucket = "b", allowed_referers = ["aedis.build"] }]
+    custom_rules = [for i in range(3) : { description = "r${i}", expression = "http.request.uri.path eq \"/x${i}\"", action = "block" }]
+  }
+
+  expect_failures = [cloudflare_ruleset.custom]
+}
+
+run "cdn_fora_da_zona" {
+  command = plan
+
+  variables {
+    cdn = [{ hostname = "cdn.outro.example", bucket = "b", allowed_referers = ["aedis.build"] }]
+  }
+
+  expect_failures = [cloudflare_r2_custom_domain.cdn]
+}
+
+run "cdn_referer_com_esquema" {
+  command = plan
+
+  variables {
+    cdn = [{ hostname = "cdn.aedis.build", bucket = "b", allowed_referers = ["https://aedis.build"] }]
+  }
+
+  expect_failures = [var.cdn]
+}
+
+run "sem_cdn_nem_extras_nao_ha_ruleset_de_cabecalhos" {
+  command = plan
+
+  assert {
+    condition     = length(cloudflare_ruleset.response_headers) == 0 && length(cloudflare_r2_custom_domain.cdn) == 0
+    error_message = "a fase de cabeçalhos de resposta só é tocada quando há CDN ou extras"
+  }
+}
