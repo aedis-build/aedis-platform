@@ -1,0 +1,18 @@
+{
+  "name": "aedis-example-site-ssr",
+  "private": true,
+  "description": "Next.js app with a server (OpenNext on Workers) exercised by the platform CI through deploy-site.yml (type ssr, dry-run).",
+  "packageManager": "pnpm@10.34.6",
+  "scripts": {
+    "build": "next build"
+  },
+  "dependencies": {
+    "next": "16.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "1.20.13",
+    "wrangler": "4.149.0"
+  }
+}

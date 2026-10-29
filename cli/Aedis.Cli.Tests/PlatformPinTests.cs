@@ -55,6 +55,8 @@ public sealed class PlatformPinTests
                     - uses: aedis-build/aedis-release-cut@0123456789abcdef0123456789abcdef01234567 # repin to v1.0.0 once released
                     - uses: aedis-build/aedis-conformance@v1
                     - uses: aedis-build/aedis-sca@0123456789abcdef0123456789abcdef01234567 # main
+                    - uses: aedis-build/aedis-deploy-cloudflare@0123456789abcdef0123456789abcdef01234567 # repin to v1.0.0 once released
+                    - uses: aedis-build/aedis-deploy-cloudflare@0123456789abcdef0123456789abcdef01234567 # v1.0.0
                     - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v7.0.1
                 """);
             var offenders = ConformanceChecker.UnreleasedPlatformPins(root);
@@ -64,7 +66,8 @@ public sealed class PlatformPinTests
                 ".github/workflows/ci.yml:7 @v1",
                 ".github/workflows/ci.yml:10 @0123456789abcdef0123456789abcdef01234567",
                 ".github/workflows/ci.yml:11 @v1",
-                ".github/workflows/ci.yml:12 @0123456789abcdef0123456789abcdef01234567"
+                ".github/workflows/ci.yml:12 @0123456789abcdef0123456789abcdef01234567",
+                ".github/workflows/ci.yml:13 @0123456789abcdef0123456789abcdef01234567"
             ]);
             ConformanceChecker.UnreleasedPlatformPins(Path.Combine(root, "sem-workflows")).Should().BeEmpty();
         }
