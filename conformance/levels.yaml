@@ -78,7 +78,7 @@ levels:
         source: sast-summary
         check: sast-pass
       - id: PLT-22
-        title: Workflows e actions da plataforma pinados no SHA de uma tag de release (vX.Y.Z)
+        title: Workflows, actions e módulos Terraform da organização pinados numa release (SHA da tag vX.Y.Z; no Registry, versão exata)
         source: repo
         check: platform-pins-released
   - id: 3
@@ -127,8 +127,8 @@ levels:
         source: drift-summary
         check: drift-report
       - id: PLT-20
-        title: WAF declarado em toda API ou site exposto em produção (chart ou módulo infra/cloudflare)
-        source: chart + infra/cloudflare
+        title: WAF declarado em toda API ou site exposto em produção (chart ou módulo aedis-build/aedis/cloudflare)
+        source: chart + infra/cloudflare/*.tf
         check: waf-declared-prod
       - id: PLT-21
         title: Evidências retidas (sumários versionados)

@@ -271,7 +271,8 @@ aplica juntas.
 ### Infra da Cloudflare como código
 
 A zona onde o site é servido tem a sua postura de segurança no módulo Terraform
-[`infra/cloudflare`](../infra/cloudflare/README.md) (provider `cloudflare/cloudflare` v5). Cada site, API ou CDN da zona
+[`aedis-build/aedis/cloudflare`](https://registry.terraform.io/modules/aedis-build/aedis/cloudflare) no Terraform Registry (repositório
+[terraform-cloudflare-aedis](https://github.com/aedis-build/terraform-cloudflare-aedis), provider `cloudflare/cloudflare` v5). Cada site, API ou CDN da zona
 entra em `workloads` como uma declaração de intenção (`type`, `hostnames`, `forms`, `turnstile`, `headers`, `rules`), a
 mesma estrutura que o módulo de outro provedor recebe; toda regra gerada fica restrita aos hostnames do workload. A zona
 leva o resto: TLS mínimo 1.2, Always Use HTTPS e HSTS; Bot Fight Mode ligado por padrão e política de IA por
@@ -284,7 +285,8 @@ numa regra de rate limit só. O custo do Bot Fight Mode para monitores e para a 
 ```hcl
 # infra/cloudflare/main.tf no repositório do site
 module "zone" {
-  source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=<sha da tag>" # vX.Y.Z
+  source  = "aedis-build/aedis/cloudflare"
+  version = "1.0.0" # versão exata: as releases são imutáveis (PLT-22)
 
   zone_name = "meu-site.example"
   plan      = "free"
@@ -301,8 +303,8 @@ module "zone" {
 | Segredos do Worker, inclusive o do Turnstile | `RUNTIME_SECRETS` do environment, presos à versão pelo `deploy-site.yml` |
 
 Quem aplica é o dono da zona, com um token só para isso (escopos, `terraform import` do que já existe no painel e
-backend opcional em R2 no [README do módulo](../infra/cloudflare/README.md)). O CI da plataforma roda
-`terraform fmt -check`, `validate` e `test` (provider simulado) no módulo e nos exemplos, sem credenciais.
+o estado no [README do módulo](https://github.com/aedis-build/terraform-cloudflare-aedis#readme)). O CI do módulo roda `terraform fmt -check`, `validate`,
+`test` (provider simulado) e `tflint`, sem credenciais.
 
 O `aedis platform validate --level 3` cobra o módulo de um site na Cloudflare (PLT-20, `waf-declared-prod`). Para cada
 `wrangler.jsonc` de produção (rota `custom_domain`) na raiz ou em `apps/*/`, exige `workers_dev: false` e
@@ -315,7 +317,7 @@ workload. As mensagens dizem o arquivo, o env e o hostname.
 | Exigência | Como o site a cumpre |
 |---|---|
 | DAST sem alerta alto não aceito | ZAP baseline contra o site servido em todo PR (`dast-start`); aceites com validade em `dast-accept.yaml` |
-| WAF declarado em produção | no cluster, `ingress.edge.waf: true` no `env/prod.yaml`; na Cloudflare, o módulo `infra/cloudflare` com um workload por domínio e as rotas de formulário em `forms`; a conformidade (`waf-declared-prod`) recusa um site exposto sem a declaração |
+| WAF declarado em produção | no cluster, `ingress.edge.waf: true` no `env/prod.yaml`; na Cloudflare, o módulo `aedis-build/aedis/cloudflare` em `infra/cloudflare/*.tf` com um workload por domínio e as rotas de formulário em `forms`; a conformidade (`waf-declared-prod`) recusa um site exposto sem a declaração |
 | Cabeçalhos de segurança | emitidos pela própria app em `proxy.ts` (CSP com nonce, HSTS, nosniff, sem framing, sem vazamento de referrer, `Cache-Control: no-store` nas páginas); a borda pode reforçar, não substituir |
 | Cobertura ≥ 85 % linhas / 70 % branches, sem regressão | `vitest --coverage` com reporter Cobertura e o gate do `coverage-js.yml` |
 | Fuzzing | testes baseados em propriedades com fast-check |

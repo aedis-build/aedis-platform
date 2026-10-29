@@ -30,7 +30,8 @@ public sealed class CloudflareWafTests : IDisposable
     private const string Module = """
         # infra da zona
         module "zone" {
-          source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=0123456789abcdef0123456789abcdef01234567" # v1.7.0
+          source  = "aedis-build/aedis/cloudflare"
+          version = "1.0.0"
 
           zone_name = "rlfn.studio"
           workloads = {
@@ -85,6 +86,26 @@ public sealed class CloudflareWafTests : IDisposable
             new CloudflareWorkload("cdn", ["cdn.rlfn.studio"], [])
         ]);
 
+    [Theory]
+    [InlineData("source = \"aedis-build/aedis/cloudflare\"")]
+    [InlineData("source = \"registry.terraform.io/aedis-build/aedis/cloudflare\"")]
+    [InlineData("source = \"git::https://github.com/aedis-build/terraform-cloudflare-aedis.git?ref=0123456789abcdef0123456789abcdef01234567\"")]
+    [InlineData("source = \"../../infra/cloudflare\"")]
+    public void Modulo_do_registry_do_repositorio_ou_local_e_reconhecido(string source) {
+        Write("infra/cloudflare/main.tf", $$"""module "zone" { {{source}} workloads = { a = { hostnames = ["rlfn.studio"] } } }""");
+
+        CloudflareWaf.DeclaredWorkloads(_dir).Should().ContainSingle(w => w.Name == "a");
+    }
+
+    [Theory]
+    [InlineData("source = \"acme/aedis/cloudflare\"")]
+    [InlineData("source = \"aedis-build/aedis/aws\"")]
+    public void Outro_modulo_com_workloads_nao_conta(string source) {
+        Write("infra/cloudflare/main.tf", $$"""module "zone" { {{source}} workloads = { a = { hostnames = ["rlfn.studio"] } } }""");
+
+        CloudflareWaf.DeclaredWorkloads(_dir).Should().BeNull();
+    }
+
     [Fact]
     public void Tf_sem_fechar_as_chaves_nao_quebra_a_leitura() {
         Write("infra/cloudflare/main.tf", """module "zone" { source = "x//infra/cloudflare" workloads = { a = { hostnames = ["rlfn.studio"] """);
@@ -104,19 +125,19 @@ public sealed class CloudflareWafTests : IDisposable
     public void Dominio_proprio_sem_workload_falha_com_arquivo_env_e_hostname() {
         Write("apps/web/wrangler.jsonc", Wrangler.Replace("\"pattern\": \"rlfn.studio\"", "\"pattern\": \"www.rlfn.studio\""));
 
-        Plt20().Detail.Should().Contain("apps/web/wrangler.jsonc (env.prd): domínio www.rlfn.studio não pertence a nenhum workload de infra/cloudflare");
+        Plt20().Detail.Should().Contain("apps/web/wrangler.jsonc (env.prd): domínio www.rlfn.studio não pertence a nenhum workload de infra/cloudflare/*.tf");
     }
 
     [Fact]
     public void Sem_modulo_ou_sem_workloads_falha() {
         Write("infra/cloudflare/main.tf", """module "zone" { source = "../infra/cloudflare" zone_name = "rlfn.studio" }""");
-        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare com workloads");
+        Plt20().Detail.Should().Contain("sem módulo aedis-build/aedis/cloudflare com workloads");
 
         Write("infra/cloudflare/main.tf", """module "outro" { source = "./x" workloads = { a = { hostnames = ["rlfn.studio"] } } }""");
-        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare com workloads");
+        Plt20().Detail.Should().Contain("sem módulo aedis-build/aedis/cloudflare com workloads");
 
         Directory.Delete(Path.Combine(_dir, "infra"), true);
-        Plt20().Detail.Should().Contain("sem módulo infra/cloudflare com workloads");
+        Plt20().Detail.Should().Contain("sem módulo aedis-build/aedis/cloudflare com workloads");
     }
 
     [Fact]

@@ -63,8 +63,23 @@ a tag solta (uma tag pode ser movida por quem tem escrita; o SHA não):
 Com o `package-ecosystem: github-actions` no `.github/dependabot.yml` (os templates do tenant e do site já o trazem),
 o Dependabot abre o pull request de repin a cada release, SHA e comentário juntos. `aedis platform init` e
 `new-site` já escrevem esse formato (`--platform-ref v1` resolve para a release mais alta do major), e
-`aedis platform validate --level 2` falha (controle PLT-22) quando um `uses:` da plataforma ou de uma das quatro actions
+`aedis platform validate --level 2` falha (controle PLT-22) quando um `uses:` da plataforma ou de uma das actions
 não aponta para o SHA de uma tag `vX.Y.Z`.
+
+Módulos Terraform da organização (`terraform-<provedor>-aedis`, como o
+[`aedis-build/aedis/cloudflare`](https://registry.terraform.io/modules/aedis-build/aedis/cloudflare)) são a exceção
+explícita: o Terraform Registry só resolve versões, nunca SHAs, então o pin é a `version` exata, sem intervalo:
+
+```hcl
+module "zone" {
+  source  = "aedis-build/aedis/cloudflare"
+  version = "1.0.0"
+}
+```
+
+Basta porque as releases da organização são imutáveis: a tag `vX.Y.Z` não se move, então a versão sempre aponta o
+mesmo código. `~> 1.0`, `>= 1.0.0` ou um bloco sem `version` falham o PLT-22. Por git, o módulo segue a regra dos
+workflows: `?ref=<sha da tag>` com `# vX.Y.Z` na linha. O Dependabot (`package-ecosystem: terraform`) abre o repin.
 
 Para quem dá manutenção: a primeira release de um major é cortada à mão (`gh workflow run release -f bump=major`);
 as seguintes saem sozinhas a cada push em `main` que libera algo.

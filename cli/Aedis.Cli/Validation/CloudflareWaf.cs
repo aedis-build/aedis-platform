@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace Aedis.Cli.Validation;
 
-/// <summary>Um workload declarado no módulo <c>infra/cloudflare</c>: o nome (a chave em <c>workloads</c>), os hostnames e as rotas de formulário.</summary>
+/// <summary>Um workload declarado no módulo Cloudflare do Aedis: o nome (a chave em <c>workloads</c>), os hostnames e as rotas de formulário.</summary>
 /// <param name="Name">Chave do workload.</param>
 /// <param name="Hostnames">Hostnames do workload.</param>
 /// <param name="Forms">Rotas que recebem POST, cobertas pelo rate limit.</param>
@@ -12,9 +12,9 @@ public sealed record CloudflareWorkload(string Name, IReadOnlyList<string> Hostn
 /// <summary>
 ///     O lado Cloudflare do controle <c>waf-declared-prod</c> (PLT-20): um site com <c>wrangler.jsonc</c> de produção (uma
 ///     rota <c>custom_domain</c>) na raiz ou em <c>apps/*/</c> precisa de <c>workers_dev: false</c> e
-///     <c>preview_urls: false</c>, e todo domínio próprio dele precisa pertencer a um workload do módulo
-///     <c>infra/cloudflare</c> declarado em <c>infra/cloudflare/*.tf</c>, cujo <c>forms</c> cubra as rotas de formulário
-///     do site (route handler do Next que exporta <c>POST</c>).
+///     <c>preview_urls: false</c>, e todo domínio próprio dele precisa pertencer a um workload do módulo Cloudflare do
+///     Aedis (<c>aedis-build/aedis/cloudflare</c> no Terraform Registry) declarado em <c>infra/cloudflare/*.tf</c>, cujo
+///     <c>forms</c> cubra as rotas de formulário do site (route handler do Next que exporta <c>POST</c>).
 /// </summary>
 public static partial class CloudflareWaf
 {
@@ -36,7 +36,7 @@ public static partial class CloudflareWaf
         var problems = new List<string>();
         var workloads = DeclaredWorkloads(root);
         if (workloads is null)
-            problems.Add("sem módulo infra/cloudflare com workloads declarado em infra/cloudflare/*.tf");
+            problems.Add("sem módulo aedis-build/aedis/cloudflare com workloads declarado em infra/cloudflare/*.tf");
 
         foreach (var file in wranglers) {
             var name = Path.GetRelativePath(root, file).Replace('\\', '/');
@@ -49,7 +49,7 @@ public static partial class CloudflareWaf
                 if (workloads is null) continue;
                 foreach (var domain in CustomDomains(scope)) {
                     var owner = workloads.FirstOrDefault(w => w.Hostnames.Contains(domain, StringComparer.OrdinalIgnoreCase));
-                    if (owner is null) problems.Add($"{name}{label}: domínio {domain} não pertence a nenhum workload de infra/cloudflare (workloads[*].hostnames)");
+                    if (owner is null) problems.Add($"{name}{label}: domínio {domain} não pertence a nenhum workload de infra/cloudflare/*.tf (workloads[*].hostnames)");
                     else if (!owners.Contains(owner)) owners.Add(owner);
                 }
             }
@@ -64,8 +64,10 @@ public static partial class CloudflareWaf
     }
 
     /// <summary>
-    ///     Os workloads dos módulos <c>infra/cloudflare</c> declarados em <c>infra/cloudflare/*.tf</c> (o <c>source</c>
-    ///     contém <c>infra/cloudflare</c>); <c>null</c> quando nenhum módulo declara <c>workloads</c>.
+    ///     Os workloads dos módulos Cloudflare do Aedis declarados em <c>infra/cloudflare/*.tf</c>: o <c>source</c> é o do
+    ///     Terraform Registry (<c>aedis-build/aedis/cloudflare</c>), o repositório (<c>terraform-cloudflare-aedis</c>, por
+    ///     git) ou um caminho que termina em <c>infra/cloudflare</c>; <c>null</c> quando nenhum módulo declara
+    ///     <c>workloads</c>.
     /// </summary>
     public static IReadOnlyList<CloudflareWorkload>? DeclaredWorkloads(string root) {
         var dir = Path.Combine(root, "infra", "cloudflare");
@@ -77,7 +79,7 @@ public static partial class CloudflareWaf
             var text = HclComment().Replace(File.ReadAllText(file), "");
             foreach (Match module in ModuleStart().Matches(text)) {
                 var body = Block(text, module.Index + module.Length - 1);
-                if (!body.Contains("infra/cloudflare", StringComparison.Ordinal) || WorkloadsStart().Match(body) is not { Success: true } start) continue;
+                if (!ModuleSource().IsMatch(body) || WorkloadsStart().Match(body) is not { Success: true } start) continue;
                 workloads ??= [];
                 var entries = Block(body, start.Index + start.Length - 1);
                 for (var entry = Entry().Match(entries); entry.Success; ) {
@@ -171,6 +173,9 @@ public static partial class CloudflareWaf
 
     [GeneratedRegex(@"module\s+""[^""]*""\s*\{")]
     private static partial Regex ModuleStart();
+
+    [GeneratedRegex(@"\bsource\s*=\s*""(?:(?:registry\.terraform\.io/)?aedis-build/aedis/cloudflare|[^""]*terraform-cloudflare-aedis[^""]*|[^""]*infra/cloudflare[^""]*)""")]
+    private static partial Regex ModuleSource();
 
     [GeneratedRegex(@"(?:^|\s)workloads\s*=\s*\{")]
     private static partial Regex WorkloadsStart();
