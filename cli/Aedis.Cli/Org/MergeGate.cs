@@ -220,6 +220,21 @@ public static partial class MergeGate
     }
 
     /// <summary>
+    ///     Se a App do portão já aprovou este head: a última revisão dela é APPROVED no mesmo commit. Cada fim de
+    ///     workflow dispara o portão de novo, e sem essa checagem cada disparo publicaria mais uma aprovação na PR.
+    ///     Sem o login da App, reconhece a aprovação pelo texto que o portão usa.
+    /// </summary>
+    /// <param name="reviews">Revisões da PR, na ordem em que foram enviadas.</param>
+    /// <param name="headSha">Commit avaliado.</param>
+    /// <param name="gateLogin">Login da App do portão (<c>&lt;slug&gt;[bot]</c>), ou nulo quando não foi possível lê-lo.</param>
+    public static bool AlreadyApprovedBy(JsonArray reviews, string headSha, string? gateLogin) {
+        var mine = reviews.OfType<JsonObject>().Where(r => gateLogin is null
+            ? r["user"]?["type"]?.GetValue<string>() == "Bot" && (r["body"]?.GetValue<string>() ?? "").Contains("(Aedis Compliance)", StringComparison.Ordinal)
+            : string.Equals(r["user"]?["login"]?.GetValue<string>(), gateLogin, StringComparison.OrdinalIgnoreCase)).LastOrDefault();
+        return mine?["state"]?.GetValue<string>() == "APPROVED" && mine["commit_id"]?.GetValue<string>() == headSha;
+    }
+
+    /// <summary>
     ///     Logins dos mantenedores humanos cuja revisão mais recente aprova <paramref name="headSha" />: conta só
     ///     usuário (não bot) com associação OWNER, MEMBER ou COLLABORATOR, diferente do autor; uma revisão posterior
     ///     pedindo mudanças ou dispensada anula a aprovação anterior da mesma pessoa.

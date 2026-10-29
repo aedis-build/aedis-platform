@@ -169,6 +169,9 @@ public sealed class MergeGateTests
     {
         public List<(HttpMethod Method, string Url, string Auth, string Body)> Writes { get; } = [];
 
+        /// <summary>Revisões já existentes na PR 5 (JSON), devolvidas por <c>GET /pulls/5/reviews</c>.</summary>
+        public string Reviews { get; init; } = "[]";
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
             var url = request.RequestUri!.ToString();
             var auth = request.Headers.Authorization?.Parameter ?? "";
@@ -181,6 +184,8 @@ public sealed class MergeGateTests
 
             if (url.Contains("/commits/abcdef1234567890/pulls")) return Json("""[{"number":5,"state":"open","head":{"sha":"abcdef1234567890"}}]""");
             if (url.EndsWith("/pulls/5")) return Json("""{"number":5,"node_id":"PR_1","title":"feat(api): nova rota","body":"","draft":false,"additions":100,"deletions":20,"mergeable_state":"blocked","user":{"login":"octo"},"head":{"sha":"abcdef1234567890","repo":{"full_name":"acme/bom","fork":false}},"base":{"ref":"main"}}""");
+            if (url.Contains("/pulls/5/reviews")) return Json(Reviews);
+            if (url.EndsWith("/app")) return Json("""{"slug":"aedis-compliance"}""");
             if (url.Contains("/pulls/5/files")) return Json("""[{"filename":"src/Api/Thing.cs"}]""");
             if (url.Contains("/pulls/5/commits")) return Json("""[{"commit":{"message":"feat(api): nova rota"}}]""");
             if (url.Contains("/issues/5/comments")) return Json("[]");
@@ -230,6 +235,43 @@ public sealed class MergeGateTests
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/pulls/5/reviews")).Which.Should().Match<(HttpMethod, string, string Auth, string Body)>(w => w.Auth == "ghs_app" && w.Body.Contains("APPROVE"));
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/graphql")).Which.Body.Should().Contain("SQUASH").And.Contain("PR_1");
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/issues/5/comments")).Which.Body.Should().Contain(MergeGate.CommentMarker);
+    }
+
+    [Fact]
+    public async Task Comando_nao_aprova_de_novo_um_head_que_a_App_ja_aprovou() {
+        using var key = RSA.Create(2048);
+        var fake = new FakeGitHub {
+            Reviews = """[{"user":{"login":"aedis-compliance[bot]","type":"Bot"},"state":"APPROVED","commit_id":"abcdef1234567890","body":"ok (Aedis Compliance)."}]"""
+        };
+        var outDir = Path.Combine(Path.GetTempPath(), "aedis-gate-" + Guid.NewGuid().ToString("N"));
+        var root = new System.CommandLine.RootCommand { PrGateCommand.Create(() => fake) };
+
+        var exit = await root.Parse(["gate", "--org", "acme", "--repo", "bom", "--head-sha", "abcdef1234567890", "--app-id", "12345", "--app-key", key.ExportRSAPrivateKeyPem(), "--out", outDir, "--token", "t"]).InvokeAsync();
+
+        exit.Should().Be(0);
+        var summary = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(outDir, "merge-gate-summary.json")))!;
+        summary["decision"]!.GetValue<string>().Should().Be("approve");
+        summary["action"]!.GetValue<string>().Should().StartWith("Already approved");
+        fake.Writes.Should().NotContain(w => w.Url.EndsWith("/pulls/5/reviews"));
+        fake.Writes.Should().NotContain(w => w.Url.EndsWith("/graphql"));
+    }
+
+    [Theory]
+    [InlineData("aedis-compliance[bot]", "aedis-compliance[bot]", "APPROVED", "abcdef1234567890", true)]
+    [InlineData("aedis-compliance[bot]", "aedis-compliance[bot]", "APPROVED", "0000000000000000", false)]
+    [InlineData("aedis-compliance[bot]", "aedis-compliance[bot]", "DISMISSED", "abcdef1234567890", false)]
+    [InlineData("aedis-compliance[bot]", "outra-app[bot]", "APPROVED", "abcdef1234567890", false)]
+    [InlineData(null, "aedis-compliance[bot]", "APPROVED", "abcdef1234567890", true)]
+    public void AlreadyApprovedBy_so_a_ultima_revisao_da_App_no_mesmo_head(string? gateLogin, string reviewer, string state, string commit, bool expected) {
+        static JsonObject Review(string login, string type, string state, string commit) => new() {
+            ["user"] = new JsonObject { ["login"] = login, ["type"] = type }, ["state"] = state, ["commit_id"] = commit, ["body"] = "ok (Aedis Compliance)."
+        };
+        var reviews = new JsonArray(
+            Review("aedis-compliance[bot]", "Bot", "APPROVED", "old"),
+            Review("jeff", "User", "APPROVED", "abcdef1234567890"),
+            Review(reviewer, "Bot", state, commit));
+
+        MergeGate.AlreadyApprovedBy(reviews, "abcdef1234567890", gateLogin).Should().Be(expected);
     }
 
     [Fact]
