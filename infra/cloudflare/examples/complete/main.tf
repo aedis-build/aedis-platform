@@ -1,5 +1,5 @@
-# Referência de todas as variáveis do módulo, numa zona fictícia (example.com) no plano Pro. Cada bloco diz o que
-# muda no Free. Nada aqui é de uma zona real: troque nomes, hostnames e endereços antes de usar.
+# Referência de todas as variáveis do módulo, numa zona fictícia (example.com) no plano Pro com vários workloads. Cada
+# bloco diz o que muda no Free. Nada aqui é de uma zona real: troque nomes, hostnames e endereços antes de usar.
 terraform {
   required_version = ">= 1.6"
 
@@ -15,7 +15,7 @@ terraform {
 provider "cloudflare" {}
 
 variable "origin_verify" {
-  description = "Valor do cabeçalho de verificação; fica no terraform.tfvars ou em TF_VAR_origin_verify, fora do git."
+  description = "Valor do cabeçalho de verificação da API; fica no terraform.tfvars ou em TF_VAR_origin_verify, fora do git."
   type        = string
   sensitive   = true
 }
@@ -26,18 +26,53 @@ module "zone" {
 
   zone_name = "example.com"
 
-  # Free: 5 regras customizadas em vez de 20, 1 regra de rate limit em vez de 2, Bot Fight Mode em vez do Super Bot
-  # Fight Mode e nenhum ruleset gerenciado configurável (o Free Managed Ruleset roda sozinho).
+  # Free: 5 regras customizadas na zona em vez de 20, 1 regra de rate limit em vez de 2, Bot Fight Mode em vez do
+  # Super Bot Fight Mode e nenhum ruleset gerenciado configurável (o Free Managed Ruleset roda sozinho).
   plan = "pro"
 
-  hostnames = ["example.com", "www.example.com", "app.example.com"]
+  # A intenção de cada site, API e CDN. Os tetos de regras são da zona: todos os workloads dividem as mesmas 20 (5 no
+  # Free). Aqui: métodos 1 (uma regra para todos os tipos) + hotlink da cdn 1 + regras do app 1 + custom_rules 1 = 4,
+  # o que cabe também no Free; o plan diz quem consome o quê quando passa do teto.
+  workloads = {
+    site = {
+      type      = "site-ssr"
+      hostnames = ["example.com", "www.example.com"]
+      forms     = ["/api/contato"]
+      turnstile = true
+    }
+    app = {
+      type      = "site-ssr"
+      hostnames = ["app.example.com"]
+      forms     = ["/api/convites"]
+      rules = [{
+        description = "Painel só a partir do Brasil"
+        expression  = "starts_with(http.request.uri.path, \"/admin\") and ip.src.country ne \"BR\""
+        action      = "block"
+      }]
+    }
+    # API atrás da Cloudflare; o cabeçalho vem de variável sensível, nunca de um segredo escrito aqui.
+    api = {
+      type      = "api"
+      hostnames = ["api.example.com"]
+      headers   = { "X-Origin-Verify" = var.origin_verify }
+    }
+    cdn = {
+      type             = "cdn"
+      hostnames        = ["cdn.example.com"]
+      bucket           = "example-cdn"
+      allowed_referers = ["example.com"]
+      headers          = { "Timing-Allow-Origin" = "https://example.com" }
+      manage_domain    = true
+    }
+  }
 
-  # Rate limit no POST destas rotas, por IP. Free: janela de 10 s, e esta passa a ser a única regra (o limite geral
-  # some); Pro: janela de 1 minuto, ao lado do limite geral.
-  form_paths               = ["/api/contato"]
+  # Rate limit por IP. Os formulários de site e app entram numa regra só, com os hosts e as rotas de cada um. Free:
+  # janela de 10 s e essa passa a ser a única regra (o limite geral some); Pro: janela de 1 minuto, ao lado do limite
+  # geral. Os limiares são da zona porque, no Free, todos os workloads cabem numa regra.
   form_requests_per_period = 3
 
-  # Limite geral por IP a cada 10 s nos hostnames, fora bots verificados. Free: só existe com form_paths = [].
+  # Limite geral por IP a cada 10 s nos sites e APIs (a cdn fica de fora), sem bots verificados. Free: só existe
+  # quando nenhum workload tem forms.
   site_requests_per_period = 100
 
   # managed_challenge exige mitigation_timeout 0 em Free, Pro e Business (o módulo faz isso). Com block, a ação dura
@@ -56,24 +91,12 @@ module "zone" {
     labyrinth = false
   }
 
-  # Contam no limite junto com a regra de métodos do módulo (1) e as 2 de cada CDN. Aqui: 1 + 2 + 2 = 5, o teto do
-  # Free; no Free, uma terceira regra faz o plan falhar na precondição. Pro: até 20.
-  custom_rules = [
-    {
-      description = "Painel só a partir do Brasil"
-      expression  = "http.host eq \"app.example.com\" and starts_with(http.request.uri.path, \"/admin\") and ip.src.country ne \"BR\""
-      action      = "block"
-    },
-    {
-      description = "Sondagens de arquivos que o site não tem"
-      expression  = "http.request.uri.path in {\"/wp-login.php\" \"/xmlrpc.php\" \"/.env\"}"
-      action      = "block"
-    },
-  ]
-
-  # Igual nos dois planos. O segredo do widget sai no output turnstile_secret e vai para o RUNTIME_SECRETS do
-  # environment, nunca para o git.
-  turnstile = { name = "example.com contato", mode = "managed" }
+  # Regras da zona inteira (as de um workload vão em workloads[*].rules). Contam no mesmo teto.
+  custom_rules = [{
+    description = "Sondagens de arquivos que nenhum site tem"
+    expression  = "http.request.uri.path in {\"/wp-login.php\" \"/xmlrpc.php\" \"/.env\"}"
+    action      = "block"
+  }]
 
   # Igual nos dois planos. Cada destino recebe um e-mail de verificação; o send_email do Worker só envia para eles.
   email_routing = {
@@ -81,31 +104,15 @@ module "zone" {
     rules     = [{ to = "contato@example.com", worker = "example-site" }]
   }
 
-  # Igual nos dois planos: buckets da conta com o dev URL r2.dev desligado.
+  # Igual nos dois planos: buckets da conta, fora os das cdn, com o dev URL r2.dev desligado.
   r2_buckets = ["example-uploads"]
-
-  # Igual nos dois planos, mas no Free as 2 regras da CDN pesam mais: 2 das 5.
-  cdn = [{
-    hostname         = "cdn.example.com"
-    bucket           = "example-cdn"
-    allowed_referers = ["example.com"]
-    headers          = { "Timing-Allow-Origin" = "https://example.com" }
-    manage_domain    = true
-  }]
-
-  # Mesma fase dos cabeçalhos da CDN (um ruleset só por zona), igual nos dois planos.
-  response_headers = [{
-    description = "Verificação de origem nas respostas da app"
-    expression  = "http.host eq \"app.example.com\""
-    headers     = { "X-Origin-Verify" = var.origin_verify }
-  }]
 }
 
-output "turnstile_sitekey" {
-  value = module.zone.turnstile_sitekey
+output "turnstile_sitekeys" {
+  value = module.zone.turnstile_sitekeys
 }
 
-output "turnstile_secret" {
-  value     = module.zone.turnstile_secret
+output "turnstile_secrets" {
+  value     = module.zone.turnstile_secrets
   sensitive = true
 }

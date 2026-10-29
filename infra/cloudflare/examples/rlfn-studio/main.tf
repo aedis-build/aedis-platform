@@ -23,21 +23,28 @@ module "zone" {
   # Num repositório de site: "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=<sha da tag>"
   source = "../.."
 
-  zone_name  = "rlfn.studio"
-  plan       = "free"
-  hostnames  = ["rlfn.studio", "staging.rlfn.studio"]
-  form_paths = ["/api/proposals"]
-  turnstile  = { name = "rlfn.studio propostas" }
+  zone_name = "rlfn.studio"
+  plan      = "free"
+
+  workloads = {
+    site = {
+      type      = "site-ssr"
+      hostnames = ["rlfn.studio", "staging.rlfn.studio"]
+      forms     = ["/api/proposals"]
+      turnstile = true
+    }
+  }
+
   email_routing = {
     addresses = [var.proposals_inbox]
   }
 }
 
 output "turnstile_sitekey" {
-  value = module.zone.turnstile_sitekey
+  value = module.zone.turnstile_sitekeys["site"]
 }
 
 output "turnstile_secret" {
-  value     = module.zone.turnstile_secret
+  value     = module.zone.turnstile_secrets["site"]
   sensitive = true
 }

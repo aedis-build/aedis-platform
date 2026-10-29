@@ -3,12 +3,18 @@ using System.Text.RegularExpressions;
 
 namespace Aedis.Cli.Validation;
 
+/// <summary>Um workload declarado no módulo <c>infra/cloudflare</c>: o nome (a chave em <c>workloads</c>), os hostnames e as rotas de formulário.</summary>
+/// <param name="Name">Chave do workload.</param>
+/// <param name="Hostnames">Hostnames do workload.</param>
+/// <param name="Forms">Rotas que recebem POST, cobertas pelo rate limit.</param>
+public sealed record CloudflareWorkload(string Name, IReadOnlyList<string> Hostnames, IReadOnlyList<string> Forms);
+
 /// <summary>
 ///     O lado Cloudflare do controle <c>waf-declared-prod</c> (PLT-20): um site com <c>wrangler.jsonc</c> de produção (uma
 ///     rota <c>custom_domain</c>) na raiz ou em <c>apps/*/</c> precisa de <c>workers_dev: false</c> e
-///     <c>preview_urls: false</c> e de um módulo <c>infra/cloudflare</c> declarado em <c>infra/cloudflare/*.tf</c> cujo
-///     <c>form_paths</c> cubra toda rota de formulário do site (route handler do Next que exporta <c>POST</c>), ou
-///     <c>form_paths = []</c> explícito quando não há nenhuma.
+///     <c>preview_urls: false</c>, e todo domínio próprio dele precisa pertencer a um workload do módulo
+///     <c>infra/cloudflare</c> declarado em <c>infra/cloudflare/*.tf</c>, cujo <c>forms</c> cubra as rotas de formulário
+///     do site (route handler do Next que exporta <c>POST</c>).
 /// </summary>
 public static partial class CloudflareWaf
 {
@@ -28,49 +34,62 @@ public static partial class CloudflareWaf
         if (wranglers.Count == 0) return [];
 
         var problems = new List<string>();
-        var formRoutes = new List<string>();
+        var workloads = DeclaredWorkloads(root);
+        if (workloads is null)
+            problems.Add("sem módulo infra/cloudflare com workloads declarado em infra/cloudflare/*.tf");
+
         foreach (var file in wranglers) {
             var name = Path.GetRelativePath(root, file).Replace('\\', '/');
             var config = Parse(file);
-            foreach (var (scope, label) in Scopes(config).Where(s => HasCustomDomain(s.Scope) || s.Label == ""))
+            var owners = new List<CloudflareWorkload>();
+            foreach (var (scope, label) in Scopes(config).Where(s => HasCustomDomain(s.Scope) || s.Label == "")) {
                 foreach (var flag in new[] { "workers_dev", "preview_urls" })
                     if ((Flag(scope, flag) ?? Flag(config, flag)) is not false)
                         problems.Add($"{name}{label}: {flag} precisa ser false");
-            formRoutes.AddRange(FormRoutes(Path.GetDirectoryName(file)!));
+                if (workloads is null) continue;
+                foreach (var domain in CustomDomains(scope)) {
+                    var owner = workloads.FirstOrDefault(w => w.Hostnames.Contains(domain, StringComparer.OrdinalIgnoreCase));
+                    if (owner is null) problems.Add($"{name}{label}: domínio {domain} não pertence a nenhum workload de infra/cloudflare (workloads[*].hostnames)");
+                    else if (!owners.Contains(owner)) owners.Add(owner);
+                }
+            }
+
+            var routes = FormRoutes(Path.GetDirectoryName(file)!).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+            foreach (var owner in owners)
+                foreach (var route in routes.Where(r => !owner.Forms.Contains(r, StringComparer.Ordinal)))
+                    problems.Add($"{name}: rota de formulário {route} fora de forms do workload {owner.Name} ({string.Join(", ", owner.Hostnames)}), sem rate limit");
         }
 
-        var declared = DeclaredFormPaths(root);
-        if (declared is null) {
-            problems.Add("sem módulo infra/cloudflare declarado em infra/cloudflare/*.tf (com form_paths, [] quando não há formulário)");
-            return problems;
-        }
-
-        foreach (var route in formRoutes.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).Where(r => !declared.Contains(r)))
-            problems.Add($"rota de formulário {route} fora do form_paths do módulo infra/cloudflare (sem rate limit)");
         return problems;
     }
 
     /// <summary>
-    ///     A união dos <c>form_paths</c> dos módulos <c>infra/cloudflare</c> declarados em <c>infra/cloudflare/*.tf</c>;
-    ///     <c>null</c> quando nenhum módulo declara <c>form_paths</c>.
+    ///     Os workloads dos módulos <c>infra/cloudflare</c> declarados em <c>infra/cloudflare/*.tf</c> (o <c>source</c>
+    ///     contém <c>infra/cloudflare</c>); <c>null</c> quando nenhum módulo declara <c>workloads</c>.
     /// </summary>
-    public static IReadOnlySet<string>? DeclaredFormPaths(string root) {
+    public static IReadOnlyList<CloudflareWorkload>? DeclaredWorkloads(string root) {
         var dir = Path.Combine(root, "infra", "cloudflare");
         if (!Directory.Exists(dir)) return null;
-        HashSet<string>? paths = null;
-        foreach (var file in Directory.GetFiles(dir, "*.tf")) {
+        List<CloudflareWorkload>? workloads = null;
+        foreach (var file in Directory.GetFiles(dir, "*.tf").Order(StringComparer.Ordinal)) {
             // Arquivos enumerados sob o repositório informado pelo operador, não entrada externa.
             // nosemgrep: csharp.lang.security.filesystem.unsafe-path-combine.unsafe-path-combine
             var text = HclComment().Replace(File.ReadAllText(file), "");
-            foreach (Match module in ModuleBlock().Matches(text)) {
-                var body = module.Groups["body"].Value;
-                if (!body.Contains("infra/cloudflare", StringComparison.Ordinal) || FormPaths().Match(body) is not { Success: true } list) continue;
-                paths ??= new HashSet<string>(StringComparer.Ordinal);
-                foreach (Match path in Quoted().Matches(list.Groups["list"].Value)) paths.Add(path.Groups[1].Value);
+            foreach (Match module in ModuleStart().Matches(text)) {
+                var body = Block(text, module.Index + module.Length - 1);
+                if (!body.Contains("infra/cloudflare", StringComparison.Ordinal) || WorkloadsStart().Match(body) is not { Success: true } start) continue;
+                workloads ??= [];
+                var entries = Block(body, start.Index + start.Length - 1);
+                for (var entry = Entry().Match(entries); entry.Success; ) {
+                    var open = entry.Index + entry.Length - 1;
+                    var fields = Block(entries, open);
+                    workloads.Add(new CloudflareWorkload(entry.Groups["key"].Value, List(fields, "hostnames"), List(fields, "forms")));
+                    entry = Entry().Match(entries, Math.Min(open + fields.Length + 2, entries.Length));
+                }
             }
         }
 
-        return paths;
+        return workloads;
     }
 
     /// <summary>
@@ -84,7 +103,7 @@ public static partial class CloudflareWaf
             foreach (var handler in handlers) {
                 var segments = Path.GetRelativePath(app, Path.GetDirectoryName(handler)!).Replace('\\', '/').Split('/')
                     .Where(s => s != "." && !(s.StartsWith('(') && s.EndsWith(')')) && !s.StartsWith('@'));
-                // shortcut: segmentos dinâmicos ([id]) entram literais e só casam com um form_paths igual; trocar por prefixo quando um site tiver formulário em rota dinâmica.
+                // shortcut: segmentos dinâmicos ([id]) entram literais e só casam com um forms igual; trocar por prefixo quando um site tiver formulário em rota dinâmica.
                 yield return "/" + string.Join('/', segments);
             }
         }
@@ -107,17 +126,57 @@ public static partial class CloudflareWaf
         scope.TryGetProperty("routes", out var routes) && routes.ValueKind == JsonValueKind.Array
         && routes.EnumerateArray().Any(r => r.ValueKind == JsonValueKind.Object && r.TryGetProperty("custom_domain", out var c) && c.ValueKind == JsonValueKind.True);
 
+    private static IEnumerable<string> CustomDomains(JsonElement scope) =>
+        scope.TryGetProperty("routes", out var routes) && routes.ValueKind == JsonValueKind.Array
+            ? routes.EnumerateArray()
+                .Where(r => r.ValueKind == JsonValueKind.Object && r.TryGetProperty("custom_domain", out var c) && c.ValueKind == JsonValueKind.True
+                    && r.TryGetProperty("pattern", out var p) && p.ValueKind == JsonValueKind.String)
+                .Select(r => r.GetProperty("pattern").GetString()!)
+            : [];
+
+    /// <summary>
+    ///     O conteúdo entre a chave aberta em <paramref name="open" /> e a que a fecha, pulando chaves dentro de strings
+    ///     (as expressões de regra têm <c>{"GET" "HEAD"}</c>).
+    /// </summary>
+    // shortcut: interpolação com aspas dentro de "${...}" e heredocs não são entendidas; ler HCL de verdade se um módulo precisar.
+    private static string Block(string text, int open) {
+        var depth = 0;
+        for (var i = open; i < text.Length; i++) {
+            switch (text[i]) {
+                case '"':
+                    for (i++; i < text.Length && text[i] != '"'; i++)
+                        if (text[i] == '\\') i++;
+                    break;
+                case '{':
+                    depth++;
+                    break;
+                case '}' when --depth == 0:
+                    return text[(open + 1)..i];
+            }
+        }
+
+        return text[(open + 1)..];
+    }
+
+    private static IReadOnlyList<string> List(string fields, string name) =>
+        Regex.Match(fields, $@"(?:^|[\s{{,]){name}\s*=\s*\[(?<list>[^\]]*)\]") is { Success: true } m
+            ? Quoted().Matches(m.Groups["list"].Value).Select(q => q.Groups[1].Value).ToList()
+            : [];
+
     private static bool? Flag(JsonElement scope, string name) =>
         scope.TryGetProperty(name, out var value) && value.ValueKind is JsonValueKind.True or JsonValueKind.False ? value.GetBoolean() : null;
 
     [GeneratedRegex(@"(?m)^\s*(#|//).*$")]
     private static partial Regex HclComment();
 
-    [GeneratedRegex(@"module\s+""[^""]*""\s*\{(?<body>(?:[^{}]|\{(?:[^{}]|\{[^{}]*\})*\})*)\}")]
-    private static partial Regex ModuleBlock();
+    [GeneratedRegex(@"module\s+""[^""]*""\s*\{")]
+    private static partial Regex ModuleStart();
 
-    [GeneratedRegex(@"(?m)^\s*form_paths\s*=\s*\[(?<list>[^\]]*)\]")]
-    private static partial Regex FormPaths();
+    [GeneratedRegex(@"(?:^|\s)workloads\s*=\s*\{")]
+    private static partial Regex WorkloadsStart();
+
+    [GeneratedRegex(@"\G[\s,]*(?:""(?<key>[^""]+)""|(?<key>[A-Za-z_][\w-]*))\s*=\s*\{")]
+    private static partial Regex Entry();
 
     [GeneratedRegex(@"""([^""]*)""")]
     private static partial Regex Quoted();
