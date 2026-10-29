@@ -68,6 +68,9 @@ public static class PrGateCommand
                 if (app is null) {
                     action = "Not approved: the GitHub App credentials (AEDIS_APP_ID/AEDIS_APP_PRIVATE_KEY) are missing in this repository.";
                 }
+                else if (MergeGate.AlreadyApprovedBy(await app.ListPullRequestReviewsAsync(orgName, repoName, snapshot.Number, cancellationToken), snapshot.HeadSha, gateLogin)) {
+                    action = $"Already approved by Aedis Compliance for `{snapshot.HeadSha[..7]}`; nothing new to post.";
+                }
                 else {
                     await app.ApprovePullRequestAsync(orgName, repoName, snapshot.Number, $"✅ Every criterion of the merge policy passed for `{snapshot.HeadSha[..7]}` (Aedis Compliance).", cancellationToken);
                     try {
