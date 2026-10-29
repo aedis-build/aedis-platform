@@ -151,7 +151,7 @@ jobs:
           docker build -q -t example-app examples/app
           docker run -d --rm -p 8080:8080 --name example-app example-app
           curl --retry 10 --retry-all-errors --retry-delay 1 -fsS http://localhost:8080/healthz
-      - uses: aedis-build/aedis-dast@90e9b74dc708270b7490f73ea71e70fb8e055b3c # v1.0.1
+      - uses: aedis-build/aedis-dast@6ffb63fef3b947247be38d2cb2ae4b46033bd1fd # v1.0.2
         with:
           target-url: http://localhost:8080/
           accept-file: examples/app/dast-accept.yaml
