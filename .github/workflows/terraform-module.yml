@@ -1,0 +1,67 @@
+# Checagens de um módulo Terraform da organização (os repositórios terraform-<provedor>-aedis), sem credenciais do
+# provedor e sem aplicar nada: terraform fmt -check, init sem backend e validate no módulo e em cada exemplo
+# (examples/*/), terraform test (os testes simulam o provider com mock_provider), tflint (o .tflint.hcl do
+# repositório) e REUSE. Um job só, chamado "Terraform", que é o check exigido pelo ruleset do repositório do módulo.
+#
+#   jobs:
+#     terraform:
+#       uses: aedis-build/aedis-platform/.github/workflows/terraform-module.yml@<sha da tag> # vX.Y.Z
+#       permissions: { contents: read }
+name: terraform-module
+
+on:
+  workflow_call:
+    inputs:
+      terraform-version:
+        description: Versão do Terraform (a mesma em todo repositório de módulo, para o fmt não divergir)
+        type: string
+        default: "1.15.6"
+      tflint-version:
+        description: Versão do tflint
+        type: string
+        default: v0.59.1
+      working-directory:
+        description: Raiz do módulo (onde ficam os .tf, examples/ e tests/)
+        type: string
+        default: "."
+
+permissions: {}
+
+jobs:
+  terraform:
+    name: Terraform
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ inputs.terraform-version }}
+          terraform_wrapper: false
+
+      - uses: terraform-linters/setup-tflint@6ffdbaa3be476b3431f7275c26966ef32ff60337 # v6.3.2
+        with:
+          tflint_version: ${{ inputs.tflint-version }}
+
+      - name: fmt, validate, test e tflint (sem credenciais; nada é aplicado)
+        run: |
+          set -euo pipefail
+          terraform fmt -check -recursive -diff
+          for d in . examples/*/; do
+            [ -d "$d" ] || continue
+            terraform -chdir="$d" init -backend=false -input=false
+            terraform -chdir="$d" validate
+          done
+          if compgen -G "tests/*.tftest.hcl" > /dev/null; then terraform test; fi
+          tflint --init
+          tflint --recursive
+
+      - name: REUSE
+        run: pipx run reuse==5.0.2 lint
