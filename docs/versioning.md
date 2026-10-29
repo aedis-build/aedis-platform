@@ -3,11 +3,12 @@
 Os workflows reutilizáveis (`.github/workflows/*.yml` com `workflow_call`) deste repositório são publicados como
 releases `vX.Y.Z`, e é só por elas que um repositório os consome. As actions do Aedis no GitHub Marketplace
 ([aedis-release-cut](https://github.com/aedis-build/aedis-release-cut), [aedis-dast](https://github.com/aedis-build/aedis-dast),
-[aedis-conformance](https://github.com/aedis-build/aedis-conformance), [aedis-sca](https://github.com/aedis-build/aedis-sca))
+[aedis-conformance](https://github.com/aedis-build/aedis-conformance), [aedis-sca](https://github.com/aedis-build/aedis-sca),
+[aedis-deploy-cloudflare](https://github.com/aedis-build/aedis-deploy-cloudflare))
 vivem cada uma no seu repositório, com a mesma
 política: `release-cut` a cada push em `main`, release imutável e atestada pelo `release-tag.yml` desta plataforma,
 tag maior móvel, e o consumo só pelo SHA de uma tag `vX.Y.Z`. Esta plataforma as consome assim também
-(`release-cut.yml`, `aedis-ci.yml`, `coverage.yml`, `coverage-js.yml`, `validate.yml`, `conventional-commits.yml`).
+(`release-cut.yml`, `aedis-ci.yml`, `coverage.yml`, `coverage-js.yml`, `validate.yml`, `conventional-commits.yml`, `deploy-site.yml`).
 
 ## Versão
 
@@ -56,6 +57,7 @@ a tag solta (uma tag pode ser movida por quem tem escrita; o SHA não):
       - uses: aedis-build/aedis-release-cut@<sha da tag> # v1.0.1
       - uses: aedis-build/aedis-conformance@<sha da tag> # v1.0.1
       - uses: aedis-build/aedis-sca@<sha da tag> # v1.0.1
+      - uses: aedis-build/aedis-deploy-cloudflare@<sha da tag> # v1.0.0
 ```
 
 Com o `package-ecosystem: github-actions` no `.github/dependabot.yml` (os templates do tenant e do site já o trazem),

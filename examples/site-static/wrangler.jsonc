@@ -1,0 +1,10 @@
+// Static assets only; never deployed by the platform CI (no Cloudflare credentials there: dry-run).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aedis-example-site-static",
+  "compatibility_date": "2026-10-01",
+  "assets": { "directory": "./out", "not_found_handling": "404-page" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "static.example.com", "custom_domain": true }]
+}

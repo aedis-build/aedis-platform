@@ -1,5 +1,5 @@
-# CI deste repositório: chart (lint, unittest, render dos exemplos, kubeconform, Trivy config), scripts e
-# o template do tenant validado com o próprio chart.
+# CI deste repositório: chart (lint, unittest, render dos exemplos, kubeconform, Trivy config), scripts, o
+# template do tenant validado com o próprio chart e o deploy-site.yml (static e ssr) em dry-run.
 name: ci
 
 on:
@@ -155,6 +155,40 @@ jobs:
         with:
           target-url: http://localhost:8080/
           accept-file: examples/app/dast-accept.yaml
+
+  # deploy-site.yml de ponta a ponta sem credenciais da Cloudflare: build (export estático e OpenNext), SBOM,
+  # atestação e a verificação dela no job de deploy, que avisa e não publica (environment vazio = dry-run).
+  deploy-site-static:
+    if: github.event.action != 'closed'
+    name: deploy-site (static, dry-run)
+    uses: ./.github/workflows/deploy-site.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      pull-requests: write
+      actions: read
+    with:
+      type: static
+      name: example-site-static
+      working-directory: examples/site-static
+      environment: ""
+
+  deploy-site-ssr:
+    if: github.event.action != 'closed'
+    name: deploy-site (ssr, dry-run)
+    uses: ./.github/workflows/deploy-site.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      pull-requests: write
+      actions: read
+    with:
+      type: ssr
+      name: example-site-ssr
+      working-directory: examples/site-ssr
+      environment: ""
 
   reuse:
     if: github.event.action != 'closed'

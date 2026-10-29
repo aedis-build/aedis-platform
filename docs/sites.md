@@ -96,12 +96,23 @@ injeta as variáveis do framework Aedis (`ASPNETCORE_*`, `Security__*`), as prob
 (um caminho explícito diferente é respeitado, inclusive nos healthchecks do ALB, AGIC e Kong) e não há segredos
 de banco ou fila. `aedis platform new-app portal --type site` gera o `app.yaml` acima sem bloco `secrets`.
 
-## 3b. Site estático na Cloudflare: `deploy-static.yml`
+## 3b. Site na Cloudflare: `deploy-site.yml`
 
-Um site sem servidor (Next.js com `output: "export"`) pode ir para a Cloudflare em vez do cluster. Os cabeçalhos de
-segurança saem de um `_headers` gerado no build (CSP com hashes dos scripts inline, já que não há nonce por
-requisição) e servido pelo runtime da Cloudflare. O CI continua o mesmo `aedis-ci.yml`; o deploy é outro
-reutilizável:
+Um site pode ir para a borda da Cloudflare em vez do cluster. Um só reutilizável cobre os dois tipos: `type: static`
+(export estático) e `type: ssr` (Next com servidor via [OpenNext](https://opennext.js.org/cloudflare), quando a app
+precisa de CSP com nonce por requisição, route handlers ou Durable Objects). O CI continua o mesmo `aedis-ci.yml`;
+o deploy é outro workflow. `provider: cloudflare` é o único por ora: a publicação é a action
+[aedis-deploy-cloudflare](https://github.com/aedis-build/aedis-deploy-cloudflare), e um provedor novo é outra action
+com os mesmos modos, sem mudar build, atestação, previews, rollout, rollback e smoke test, que ficam no reutilizável.
+
+O workflow constrói o site uma vez, empacota, gera o SBOM (SPDX) e atesta o pacote. Como o build roda num workflow
+reutilizável da plataforma, isolado do repositório, a atestação atende **SLSA Build L3**. O job de deploy declara o
+environment, verifica a atestação exigindo que ela tenha saído do `deploy-site.yml` e publica exatamente aqueles
+bytes com o `wrangler` do lockfile do site. Antes de publicar, a action confere o token (`/tokens/verify`: falha se
+inválido, aviso se expira em menos de 14 dias), o `wrangler.jsonc` (`workers_dev: false`, `preview_urls: false`,
+rota com `custom_domain: true`, `nodejs_compat` no SSR) e o tamanho do bundle.
+
+### Site estático
 
 ```yaml
 # .github/workflows/deploy.yml
@@ -112,36 +123,112 @@ on:
 permissions: {}
 jobs:
   deploy:
-    uses: aedis-build/aedis-platform/.github/workflows/deploy-static.yml@<sha da tag> # vX.Y.Z
-    permissions: { contents: read, id-token: write, attestations: write }
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-site.yml@<sha da tag> # vX.Y.Z
+    permissions: { contents: read, id-token: write, attestations: write, pull-requests: write, actions: read }
     with:
+      type: static
       name: meu-site
       url: https://meu-site.example
-    secrets: inherit
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 ```
 
-O `secrets: inherit` é obrigatório: um workflow reutilizável só recebe os segredos que o caller repassa, mesmo
-num job que declara o environment. As regras do `prd` (só `main`, aprovador obrigatório) continuam valendo para o
-job que lê os segredos.
-
-O workflow constrói o site uma vez, empacota, gera o SBOM (SPDX) e atesta o pacote. Como o build roda num workflow
-reutilizável da plataforma, isolado do repositório, a atestação atende **SLSA Build L3**. O job de deploy declara o
-environment (`prd` por padrão), verifica a atestação exigindo que ela tenha saído do `deploy-static.yml` e publica
-exatamente aqueles bytes com o `wrangler` do lockfile do site.
+Sem `secrets: inherit`: o reutilizável declara o que lê. Os dois segredos ficam no environment (`prd` por padrão:
+só `main`, aprovador obrigatório, sem bypass de admin), nunca no repositório ou na organização. Como o job de deploy
+declara o environment, o segredo do environment prevalece sobre o valor (vazio) que o caller repassa. As permissões
+`pull-requests: write` e `actions: read` são dos jobs de preview e de rollback; o GitHub exige que o caller as
+conceda mesmo quando esses jobs não rodam.
 
 | No repositório do site | Para quê |
 |---|---|
-| `wrangler.jsonc` | Worker de assets estáticos apontando para `out/`, rotas do domínio |
-| environment `prd` | `CLOUDFLARE_API_TOKEN` (Workers Editor + rotas) e `CLOUDFLARE_ACCOUNT_ID`; só `main`, aprovador obrigatório, sem bypass de admin |
+| `wrangler.jsonc` | Worker de assets estáticos apontando para `out/`, `workers_dev: false`, `preview_urls: false`, rota `custom_domain: true` |
+| environment `prd` | `CLOUDFLARE_API_TOKEN` (escopos no README da action) e `CLOUDFLARE_ACCOUNT_ID`; só `main`, aprovador obrigatório |
 | `wrangler` em `devDependencies` | versão exata, atualizada pelo Dependabot com cooldown |
+
+### Site SSR (Next + OpenNext) num monorepo, com rollout e preview por PR
+
+```yaml
+# .github/workflows/deploy.yml
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      version-id:
+        description: Rollback para esta versão do Worker (vazio = deploy normal)
+        required: false
+permissions: {}
+jobs:
+  deploy:
+    uses: aedis-build/aedis-platform/.github/workflows/deploy-site.yml@<sha da tag> # vX.Y.Z
+    permissions: { contents: read, id-token: write, attestations: write, pull-requests: write, actions: read }
+    with:
+      type: ssr
+      name: meu-site
+      working-directory: apps/web
+      node-version: "24"
+      environment: staging
+      wrangler-env: staging
+      url: https://staging.meu-site.example
+      health-path: /api/health
+      secret-names: SECURITY__HMAC_KEY
+      percentage: 25
+      preview: true
+      rollback-version-id: ${{ inputs.version-id }}
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      RUNTIME_SECRETS: ${{ secrets.RUNTIME_SECRETS }}
+      SMOKE_HEADER: ${{ secrets.SMOKE_HEADER }}
+```
+
+`apps/web/wrangler.jsonc`, ao lado de `open-next.config.ts` (`export default defineCloudflareConfig()`):
+
+```jsonc
+{
+  "name": "meu-site",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "env": {
+    "staging": { "routes": [{ "pattern": "staging.meu-site.example", "custom_domain": true }] },
+    "prd": { "routes": [{ "pattern": "meu-site.example", "custom_domain": true }] },
+    // Previews: outro Worker (meu-site-preview), Version URLs ligadas, sem rota e com os próprios bindings.
+    "preview": { "preview_urls": true }
+  }
+}
+```
+
+| Comportamento | Como |
+|---|---|
+| Build | Linux (o OpenNext não constrói no Windows), `pnpm install` onde está o lockfile (a raiz do monorepo), `build-command` (padrão `opennextjs-cloudflare build`) em `working-directory`; o pacote leva `.open-next/` e a configuração do Wrangler |
+| Segredos de runtime | `RUNTIME_SECRETS` do environment é um JSON nome → valor (`{"SECURITY__HMAC_KEY": "..."}`); só os nomes de `secret-names` vão ao Worker, por stdin, presos à versão; um nome declarado sem valor falha o job e diz qual |
+| Rollout | `percentage` < 100: `wrangler versions deploy nova@P% anterior@(100-P)%`; o primeiro deploy de um Worker é sempre 100 % |
+| Smoke test | depois do deploy: 200 em `/` e em `health-path`, CSP com nonce ou hashes, HSTS e `nosniff` (curl com `SMOKE_HEADER`), mais a action [aedis-dast](https://github.com/aedis-build/aedis-dast) com `edge: true` contra a `url`; com `percentage` < 100 e smoke falho, a versão anterior volta a 100 % |
+| Desafio de bot | crie no WAF uma regra de skip para o cabeçalho de `SMOKE_HEADER` (`Nome: valor` aleatório, só no environment); nunca um bypass público |
+| Preview por PR | `preview: true` em `pull_request`: versão com alias `pr-<n>` do Worker `env.preview`, no environment `preview` do GitHub (segredos próprios, nunca os de prd), URL comentada e atualizada na PR; nunca para PR de fork; `type: static` só constrói e verifica |
+| Rollback | `workflow_dispatch` com `version-id`: lê o run que publicou a versão (a mensagem da versão traz o id do run), baixa o pacote daquele run, verifica a atestação e só então manda 100 % do tráfego para ela (dentro da retenção de artefatos) |
+| Sem credenciais | o job de deploy verifica a atestação, avisa e não publica (dry-run); `environment: ""` roda sem environment (o CI da plataforma usa assim) |
+
+Mudanças de classe de Durable Object (nova, renomeada, apagada) não saem como versão: a Cloudflare as aplica de uma
+vez. Saem num deploy só delas, a 100 %.
 
 Para conferir o que está no ar:
 
 ```bash
-gh attestation verify meu-site.tgz -R <org>/<repo> --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-static.yml
+gh attestation verify meu-site.tgz -R <org>/<repo> --signer-workflow aedis-build/aedis-platform/.github/workflows/deploy-site.yml
 ```
 
-### DAST do site estático: `wrangler dev` no CI, não contra o site no ar
+Atestações de artefato num repositório **privado** exigem GitHub Enterprise Cloud; nos planos Free e Team, só em
+repositórios públicos. Sem elas o build falha no `attest-build-provenance`, por desenho: o deploy não publica bytes
+sem proveniência.
+
+### DAST do site: `wrangler dev` no CI, não contra o site no ar
 
 O DAST roda no `aedis-ci.yml`, com o `wrangler dev` do lockfile servindo o build. O runtime local aplica o mesmo
 `_headers`, então o ZAP vê os cabeçalhos reais. O modo local não pede login nem segredo, e a rota `custom_domain`
@@ -153,7 +240,10 @@ do `wrangler.jsonc` não atrapalha:
 
 Não rode o DAST contra a URL publicada, depois do deploy. A partir dos runners do GitHub, a Cloudflare responde com
 a página de desafio de bot, e o ZAP avalia a CSP dessa página, não a do site. Isso aconteceu no aedis-ui em
-2026-10-22 ([#60](https://github.com/aedis-build/aedis-platform/issues/60)).
+2026-10-22 ([#60](https://github.com/aedis-build/aedis-platform/issues/60)). O smoke test do `deploy-site.yml` é
+outra coisa: confere a versão que acabou de entrar no ar e manda o cabeçalho de `SMOKE_HEADER` (regra de skip do WAF)
+no curl e no ZAP. O check de borda da action aedis-dast ainda não envia cabeçalhos próprios; com o desafio de bot
+ligado para os runners, ele avalia a página do desafio.
 
 No `_headers`, cada caminho recebe no máximo uma CSP. Não use `/*` com uma CSP e `! Content-Security-Policy` nas
 regras de página: em produção a Cloudflare não aplicou o detach na raiz `/` e enviou duas políticas, que o navegador

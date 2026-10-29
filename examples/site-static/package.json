@@ -1,0 +1,12 @@
+{
+  "name": "aedis-example-site-static",
+  "private": true,
+  "description": "Static site exercised by the platform CI through deploy-site.yml (type static, dry-run).",
+  "packageManager": "pnpm@10.34.6",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "4.149.0"
+  }
+}

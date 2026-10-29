@@ -30,3 +30,14 @@ updates:
       default-days: 7
     commit-message:
       prefix: "build(deps)"
+  - package-ecosystem: npm
+    directories: [/examples/site-static, /examples/site-ssr]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      examples:
+        patterns: ["*"]
+    commit-message:
+      prefix: "build(deps)"

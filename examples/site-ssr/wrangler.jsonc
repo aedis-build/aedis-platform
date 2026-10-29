@@ -1,0 +1,16 @@
+// OpenNext Worker; never deployed by the platform CI (no Cloudflare credentials there: dry-run).
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "aedis-example-site-ssr",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [{ "pattern": "ssr.example.com", "custom_domain": true }],
+  "env": {
+    // Pull request previews: a separate Worker with Version URLs on and no route.
+    "preview": { "preview_urls": true, "routes": [] }
+  }
+}
