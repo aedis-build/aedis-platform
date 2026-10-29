@@ -9,3 +9,8 @@ obj/
 .idea/
 __pycache__/
 TestResults/
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+infra/cloudflare/.terraform.lock.hcl

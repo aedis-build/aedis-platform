@@ -16,6 +16,7 @@ cobertura de código) em três níveis.
 | `template/tenant` | Esqueleto do repositório GitOps do cliente (`platform/values`, `apps/`, ApplicationSet, workflows) |
 | `template/site` | Site Next.js com Aedis UI (`aedis platform new-site`): Dockerfile distroless, `proxy.ts` com os cabeçalhos de segurança, CI do `aedis-ci` com `language: node` e `release.yml` da imagem, `type: site` no chart |
 | `template/site-cloudflare` | Camadas do `new-site --target cloudflare` sobre o `template/site` (`common/`, `static/`, `ssr/`): `wrangler.jsonc` com domínio próprio, `open-next.config.ts` no SSR, `deploy.yml` chamando o `deploy-site.yml` e DAST no `wrangler dev`; sem Dockerfile nem chart |
+| `infra/cloudflare` | Módulo Terraform da zona da Cloudflare de um site: TLS, HTTPS, HSTS, Bot Fight Mode desligado e IA liberada, regras customizadas no limite do plano, rate limit nas rotas de formulário, rulesets gerenciados no Pro, Turnstile, Email Routing e R2 ([README](infra/cloudflare/README.md)) |
 | `scripts/` | `validate-apps.sh` (render + schema + kubeconform + sumário JSON), `render-tenant-template.sh`, `release-notes.py` |
 | `.github/workflows` | Workflows reutilizáveis (`validate`, `build-image`, `sast`, `scorecard`, `coverage`, `aedis-ci`, `deploy-site`, `release-registry-js`, `release-npm`, `release-cut`, `release-tag`, `visual-regression`; em seguida `promote`) |
 | `examples/` | App de exemplo e repo tenant de exemplo usados pelo CI |

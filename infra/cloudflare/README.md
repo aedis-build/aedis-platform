@@ -1,0 +1,134 @@
+# infra/cloudflare
+
+Módulo Terraform (provider `cloudflare/cloudflare` v5) com a postura de segurança de uma zona da Cloudflare que
+serve sites do Aedis em Workers (`deploy-site.yml`). Um módulo por zona; os hostnames da zona entram numa lista.
+
+| Recurso | Free | Pro |
+|---|---|---|
+| TLS mínimo 1.2, Always Use HTTPS, HSTS (2 anos, subdomínios, preload, nosniff) | sim | sim |
+| Bot Fight Mode desligado, bloqueio de IA desligado, labirinto de IA desligado, robots.txt do site (não o gerenciado) | sim | sim, e Super Bot Fight Mode: bots verificados passam, automatizado sem identidade recebe Managed Challenge |
+| Regras customizadas: `GET`/`HEAD`/`POST` só, mais `custom_rules` | até 5 no total | até 20 |
+| Rate limit no `POST` das `form_paths`, por IP | 10 s, Block por 10 s | 60 s, Managed Challenge |
+| Rulesets gerenciados | o Free Managed Ruleset roda sozinho | Cloudflare Managed + OWASP Core |
+| Turnstile, Email Routing (destinos verificados, regras para Worker ou encaminhamento), R2 | quando pedidos | quando pedidos |
+
+Os crawlers de IA podem ler os sites: Bot Fight Mode fica desligado porque nenhuma regra de skip o contorna, e o
+robots.txt de cada site libera search, ai-input e ai-train.
+
+## Uso
+
+```hcl
+module "zone" {
+  source = "git::https://github.com/aedis-build/aedis-platform.git//infra/cloudflare?ref=<sha da tag>" # vX.Y.Z
+
+  zone_name  = "rlfn.studio"
+  plan       = "free"
+  hostnames  = ["rlfn.studio", "staging.rlfn.studio"]
+  form_paths = ["/api/proposals"] # sem formulário: [] explícito
+  turnstile  = {}
+  email_routing = { addresses = ["propostas@example.com"] }
+}
+```
+
+Exemplos completos: [`examples/aedis-build`](examples/aedis-build/main.tf) (estáticos, sem formulário) e
+[`examples/rlfn-studio`](examples/rlfn-studio/main.tf) (SSR com formulário, Turnstile e Email Routing). No
+repositório de um site, o arquivo fica em `infra/cloudflare/main.tf`: o `aedis platform validate --level 3` lê ali o
+`form_paths` (controle PLT-20, `waf-declared-prod`).
+
+## Fora do módulo
+
+| O quê | Quem cuida | Por quê |
+|---|---|---|
+| A zona | o dono, no painel | já existe; o módulo só a lê (`data "cloudflare_zone"`), então um `destroy` nunca a apaga |
+| Domínio próprio do Worker | `routes` com `custom_domain: true` no `wrangler.jsonc` | o wrangler cria o registro DNS e o certificado a cada deploy; dois donos brigam |
+| Segredos do Worker | `RUNTIME_SECRETS` do environment, enviados com a versão pelo `deploy-site.yml` | o segredo fica preso à versão (rollback leva o segredo certo); o segredo do Turnstile sai do output `turnstile_secret` direto para lá |
+| Transform Rules, cache, DNS de outros serviços | painel ou outro módulo | fora da postura de segurança |
+
+## Token
+
+Um token de API só para este módulo (*My Profile → API Tokens → Create Custom Token*), restrito às zonas e à conta
+em uso, com validade curta e só o que os recursos pedidos usam:
+
+| Escopo | Permissão | Para quê |
+|---|---|---|
+| Zone | Zone: Read | o `data "cloudflare_zone"` |
+| Zone | Zone Settings: Edit | TLS, HTTPS, HSTS |
+| Zone | Zone WAF: Edit | regras customizadas, rate limit, rulesets gerenciados |
+| Zone | Bot Management: Edit | Bot Fight Mode, IA, Super Bot Fight Mode |
+| Zone | Email Routing Rules: Edit | só com `email_routing` |
+| Account | Email Routing Addresses: Edit | só com `email_routing` |
+| Account | Turnstile: Edit | só com `turnstile` |
+| Account | Workers R2 Storage: Edit | só com `r2_buckets` |
+
+Este token não é o `CLOUDFLARE_API_TOKEN` do deploy: o do deploy publica Workers e não mexe no WAF.
+
+## Aplicar numa zona que já existe
+
+Configurações da zona e Bot Management são singletons: o primeiro apply só os ajusta. Já um ruleset de fase, um
+widget, um destino ou regra de e-mail ou um bucket criados antes no painel precisam entrar no estado com
+`terraform import`, senão o apply falha ao tentar criá-los de novo:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...        # o token acima
+ZONE_ID=...; ACCOUNT_ID=...            # Overview da zona, coluna da direita
+api() { curl -s -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4$1"; }
+api "/zones/$ZONE_ID/rulesets" | jq -r '.result[] | select(.kind == "zone") | "\(.phase) \(.id)"'
+api "/accounts/$ACCOUNT_ID/challenges/widgets" | jq -r '.result[] | "\(.name) \(.sitekey)"'
+api "/accounts/$ACCOUNT_ID/email/routing/addresses" | jq -r '.result[] | "\(.email) \(.id)"'
+api "/zones/$ZONE_ID/email/routing/rules" | jq -r '.result[] | "\(.matchers[0].value // "catch-all") \(.id)"'
+
+terraform init
+terraform import 'module.zone.cloudflare_ruleset.custom' "zones/$ZONE_ID/<id da fase http_request_firewall_custom>"
+terraform import 'module.zone.cloudflare_ruleset.rate_limit[0]' "zones/$ZONE_ID/<id da fase http_ratelimit>"
+terraform import 'module.zone.cloudflare_ruleset.managed[0]' "zones/$ZONE_ID/<id da fase http_request_firewall_managed>"   # só no pro
+terraform import 'module.zone.cloudflare_turnstile_widget.this[0]' "$ACCOUNT_ID/<sitekey>"
+terraform import 'module.zone.cloudflare_email_routing_settings.this[0]' "$ZONE_ID"
+terraform import 'module.zone.cloudflare_email_routing_address.this["<email>"]' "$ACCOUNT_ID/<id>"
+terraform import 'module.zone.cloudflare_email_routing_rule.this["<para>"]' "$ZONE_ID/<id>"
+terraform import 'module.zone.cloudflare_r2_bucket.this["<nome>"]' "$ACCOUNT_ID/<nome>/default"
+terraform plan                          # leia: as regras importadas serão substituídas pelas do módulo
+terraform apply
+```
+
+Importe só o que a listagem mostrou. O plan depois do import mostra a diferença entre o que estava no painel e o
+módulo: uma regra feita à mão que precisa ficar vira item de `custom_rules`.
+
+## Estado
+
+Sem backend, o estado fica local (`terraform.tfstate`, ignorado pelo git). O estado guarda o segredo do Turnstile;
+para dividir o estado entre pessoas ou rodar no CI, use um bucket R2 privado como backend S3 (criado à mão, fora do
+módulo, com um token R2 de leitura e escrita só nele):
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket                      = "aedis-tfstate"
+    key                         = "cloudflare/rlfn.studio.tfstate"
+    region                      = "auto"
+    endpoints                   = { s3 = "https://<ACCOUNT_ID>.r2.cloudflarestorage.com" }
+    use_path_style              = true
+    use_lockfile                = true
+    skip_credentials_validation = true
+    skip_region_validation      = true
+    skip_requesting_account_id  = true
+    skip_metadata_api_check     = true
+    skip_s3_checksum            = true
+  }
+}
+```
+
+As credenciais do backend vão em `AWS_ACCESS_KEY_ID` e `AWS_SECRET_ACCESS_KEY` (o par S3 do token R2).
+
+## Quando a zona virar Pro
+
+Troque `plan = "pro"` e rode o plan. Entram o Cloudflare Managed Ruleset e o OWASP Core (o OWASP pontua e bloqueia
+acima do limiar padrão: acompanhe os Security Events na primeira semana e ajuste com `overrides` se houver falso
+positivo), o rate limit passa a janela de 1 minuto com Managed Challenge, cabem até 20 regras customizadas e o Super
+Bot Fight Mode deixa passar os bots verificados e desafia o automatizado sem identidade. Se a fase gerenciada já tiver
+um ruleset criado no painel, importe-o antes (`cloudflare_ruleset.managed[0]`).
+
+## CI
+
+`terraform fmt -check`, `terraform validate` no módulo e nos exemplos e `terraform test` (provider simulado, sem
+credenciais nem rede) rodam no `ci.yml` da plataforma. Nenhum job da plataforma aplica este módulo: quem aplica é o
+dono da zona.
