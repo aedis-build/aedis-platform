@@ -26,6 +26,25 @@ Gera um Next.js 16 (App Router, `output: "standalone"`, pnpm) com:
 | `dast-accept.yaml`, `SECURITY.md`, `README.md` | aceites do DAST com validade, política de vulnerabilidades, guia do repositório |
 | `deploy/app.yaml` | values do chart `aedis-app` com `type: site` |
 
+### Na Cloudflare: `--target cloudflare`
+
+```bash
+aedis platform new-site portal --org minha-org --target cloudflare --type static --domain portal.minha-org.com
+aedis platform new-site portal --org minha-org --target cloudflare --type ssr --domain portal.minha-org.com
+```
+
+`--target kubernetes` (o padrão) gera o site acima. `--target cloudflare` gera o mesmo site para a borda da
+Cloudflare (seção 3b), sem `Dockerfile`, `deploy/app.yaml` nem `release.yml`:
+
+| Arquivo | Para quê |
+|---|---|
+| `wrangler.jsonc` | Worker com o domínio de `--domain` em `routes` (`custom_domain: true`), `workers_dev: false`, `preview_urls: false` e `compatibility_date` do dia (limitado à data do `workerd` do lockfile, que o `wrangler dev` exige); no `ssr`, `nodejs_compat` e `.open-next/worker.js` |
+| `open-next.config.ts` | só no `ssr`: a configuração do OpenNext (`pnpm build:worker`) |
+| `next.config.ts` + `scripts/headers.ts` | só no `static`: `output: "export"` e, depois do build, `out/_headers` com a CSP dos hashes de todo script inline (sem servidor, não há nonce nem `proxy.ts`) |
+| `.github/workflows/deploy.yml` | em push na `main`, chama o `deploy-site.yml` pinado na tag da plataforma, com os segredos declarados um a um (nunca `secrets: inherit`); no `ssr`, rollback por `workflow_dispatch` |
+| `.github/workflows/aedis-ci.yml` | o mesmo `aedis-ci.yml`, com o `dast-start` servindo o build pelo `wrangler dev` |
+| `pnpm-workspace.yaml` | as regras de cadeia de suprimento do site, mais os `overrides` das advisories transitivas do wrangler e do OpenNext |
+
 ## 2. CI: `aedis-ci.yml` com `language: node`
 
 ```yaml

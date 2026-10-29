@@ -1,0 +1,10 @@
+node_modules
+.next
+coverage
+site.log
+next-env.d.ts
+*.tsbuildinfo
+out
+.open-next
+.wrangler
+dast-server.log

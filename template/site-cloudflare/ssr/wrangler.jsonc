@@ -1,0 +1,14 @@
+// Worker do OpenNext (`pnpm build:worker` → .open-next/), publicado pelo deploy-site.yml do Aedis Platform como versão
+// (rollout por percentual e rollback). O Worker responde só no domínio próprio: nunca em workers.dev nem em URL de versão.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "__AEDIS_NAME__",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "__AEDIS_COMPAT_DATE__",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": { "enabled": true },
+  "routes": [{ "pattern": "__AEDIS_DOMAIN__", "custom_domain": true }]
+}
