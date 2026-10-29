@@ -2,7 +2,7 @@
 # Instala o hook commit-msg que valida Conventional Commits localmente (mesma regra do CI). O script vem da action
 # Aedis Release Cut (aedis-build/aedis-release-cut), pinado no mesmo commit que o conventional-commits.yml.
 set -euo pipefail
-PIN=73b343a436d16749aa1da5cf93892adf3b58bfc1 # v1.0.1
+PIN=d88e10994c4639d14ffad8aa354476dc83a6fc32 # v1.0.2
 # O diretório de hooks é o do repositório principal, também num worktree.
 HOOKS="$(git rev-parse --path-format=absolute --git-common-dir)/hooks"
 HOOK="$HOOKS/commit-msg"
