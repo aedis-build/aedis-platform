@@ -102,8 +102,11 @@ module "zone" {
 }
 ```
 
-Exemplos completos: [`examples/aedis-build`](examples/aedis-build/main.tf) (estáticos, sem formulário) e
-[`examples/rlfn-studio`](examples/rlfn-studio/main.tf) (SSR com formulário, Turnstile e Email Routing). No
+Referência de todas as opções: [`examples/complete`](examples/complete/main.tf), uma zona fictícia (`example.com`,
+plano Pro) com todas as variáveis do módulo e, em cada bloco, o que muda no Free; o `terraform test` planeja esse
+exemplo sem credenciais. Zonas reais: [`examples/aedis-build`](examples/aedis-build/main.tf) (estáticos, sem
+formulário, com a CDN) e [`examples/rlfn-studio`](examples/rlfn-studio/main.tf) (SSR com formulário, Turnstile e
+Email Routing). No
 repositório de um site, o arquivo fica em `infra/cloudflare/main.tf`: o `aedis platform validate --level 3` lê ali o
 `form_paths` (controle PLT-20, `waf-declared-prod`).
 
