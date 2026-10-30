@@ -175,6 +175,24 @@ jobs:
       working-directory: examples/site-static
       environment: ""
 
+  # O modo de repositório privado sem Enterprise Cloud: sem atestação, o deploy confere o SHA-256 do build.
+  deploy-site-static-sem-atestacao:
+    if: github.event.action != 'closed'
+    name: deploy-site (static, attestation false, dry-run)
+    uses: ./.github/workflows/deploy-site.yml
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      pull-requests: write
+      actions: read
+    with:
+      type: static
+      name: example-site-static-sem-atestacao
+      working-directory: examples/site-static
+      environment: ""
+      attestation: false
+
   deploy-site-ssr:
     if: github.event.action != 'closed'
     name: deploy-site (ssr, dry-run)

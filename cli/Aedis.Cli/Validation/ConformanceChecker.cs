@@ -53,7 +53,7 @@ public static partial class ConformanceChecker
 
     private static ControlResult Evaluate(ControlDefinition control, ValidationResult validation, string root) {
         // Um repositório sem apps/ (uma action, uma biblioteca) só responde pelos controles de repositório.
-        if (!Directory.Exists(Path.Combine(root, "apps")) && control.Check != "platform-pins-released"
+        if (!Directory.Exists(Path.Combine(root, "apps")) && control.Check is not ("platform-pins-released" or "deploy-attested")
             && !(control.Check == "waf-declared-prod" && CloudflareWaf.ProductionWranglers(root).Count > 0))
             return new ControlResult(control.Id, control.Title, "unknown", "não se aplica: repositório sem apps/");
         var manifests = validation.Rendered.ToDictionary(kv => kv.Key, kv => File.ReadAllText(kv.Value), StringComparer.Ordinal);
@@ -69,6 +69,7 @@ public static partial class ConformanceChecker
             "waf-declared-prod" => WafDeclaredProd(control, prod, validation, root),
             "prod-by-pr" => Result(control, CodeownersCoverProd(validation), "CODEOWNERS não cobre apps/*/env/prod.yaml"),
             "platform-pins-released" => Result(control, UnreleasedPlatformPins(root).Count == 0, string.Join(", ", UnreleasedPlatformPins(root))),
+            "deploy-attested" => Result(control, DisabledAttestations(root).Count == 0, string.Join(", ", DisabledAttestations(root))),
             _ => new ControlResult(control.Id, control.Title, "unknown", $"depende de {control.Source} (CI/cluster)")
         };
     }
@@ -103,6 +104,24 @@ public static partial class ConformanceChecker
         var root = Path.GetFullPath(Path.Combine(Path.GetDirectoryName(first)!, "..", "..", ".."));
         var codeowners = Path.Combine(root, "CODEOWNERS");
         return File.Exists(codeowners) && File.ReadAllText(codeowners).Contains("/apps/*/env/prod.yaml", StringComparison.Ordinal);
+    }
+
+    /// <summary>
+    ///     Linhas <c>attestation: false</c> dos workflows do repo (o deploy-site sem atestação de proveniência, para
+    ///     repositório privado sem GitHub Enterprise Cloud). Um deploy assim não tem SLSA Build L3, então não fecha o L3.
+    ///     Linhas de comentário não contam. Vazio quando nenhuma desliga a atestação.
+    /// </summary>
+    public static IReadOnlyList<string> DisabledAttestations(string root) {
+        var dir = Path.Combine(root, ".github", "workflows");
+        if (!Directory.Exists(dir)) return [];
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(dir).Where(f => f.EndsWith(".yml", StringComparison.Ordinal) || f.EndsWith(".yaml", StringComparison.Ordinal)).Order(StringComparer.Ordinal)) {
+            var lines = File.ReadAllLines(file);
+            for (var i = 0; i < lines.Length; i++)
+                if (AttestationOff().IsMatch(lines[i]))
+                    offenders.Add($"{Path.GetRelativePath(root, file).Replace('\\', '/')}:{i + 1}");
+        }
+        return offenders;
     }
 
     /// <summary>
@@ -231,6 +250,9 @@ public static partial class ConformanceChecker
 
     [GeneratedRegex(@"uses:\s*aedis-build/aedis-(?:platform/\S+|release-cut|dast|conformance|sca|deploy-cloudflare)@(?<ref>\S+)(?:\s+#\s*(?<comment>\S+))?")]
     private static partial Regex PlatformUses();
+
+    [GeneratedRegex(@"^\s*attestation:\s*['""]?false['""]?\s*(#.*)?$")]
+    private static partial Regex AttestationOff();
 
     [GeneratedRegex("^[0-9a-f]{40}$")]
     private static partial Regex Sha40();

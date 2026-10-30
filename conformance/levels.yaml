@@ -134,3 +134,8 @@ levels:
         title: Evidências retidas (sumários versionados)
         source: repo
         check: evidence-retained
+      # attestation: false (repositório privado sem Enterprise Cloud) tira a proveniência SLSA Build L3 do deploy.
+      - id: PLT-24
+        title: Deploy de site com proveniência atestada e verificada (nenhum deploy-site com attestation false)
+        source: repo
+        check: deploy-attested
