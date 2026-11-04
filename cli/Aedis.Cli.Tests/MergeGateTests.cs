@@ -172,6 +172,9 @@ public sealed class MergeGateTests
         /// <summary>Revisões já existentes na PR 5 (JSON), devolvidas por <c>GET /pulls/5/reviews</c>.</summary>
         public string Reviews { get; init; } = "[]";
 
+        /// <summary>Corpo do 403 de <c>GET /rules/branches/main</c>; nulo devolve as regras com o check obrigatório.</summary>
+        public string? RulesForbiddenBody { get; init; }
+
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) {
             var url = request.RequestUri!.ToString();
             var auth = request.Headers.Authorization?.Parameter ?? "";
@@ -190,6 +193,7 @@ public sealed class MergeGateTests
             if (url.Contains("/pulls/5/commits")) return Json("""[{"commit":{"message":"feat(api): nova rota"}}]""");
             if (url.Contains("/issues/5/comments")) return Json("[]");
             if (url.Contains("/contents/.github/aedis-merge-policy.yaml")) return Json($$"""{"type":"file","content":"{{Convert.ToBase64String(Encoding.UTF8.GetBytes(Policy))}}"}""");
+            if (url.Contains("/rules/branches/main") && RulesForbiddenBody is not null) return Json(RulesForbiddenBody, HttpStatusCode.Forbidden);
             if (url.Contains("/rules/branches/main")) return Json("""[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"ci / build"}]}}]""");
             if (url.Contains("/commits/abcdef1234567890/check-runs")) return Json("""{"check_runs":[{"name":"ci / build","status":"completed","conclusion":"success","started_at":"2026-10-18T10:00:00Z"}]}""");
             if (url.Contains("/actions/artifacts?name=")) {
@@ -235,6 +239,39 @@ public sealed class MergeGateTests
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/pulls/5/reviews")).Which.Should().Match<(HttpMethod, string, string Auth, string Body)>(w => w.Auth == "ghs_app" && w.Body.Contains("APPROVE"));
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/graphql")).Which.Body.Should().Contain("SQUASH").And.Contain("PR_1");
         fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/issues/5/comments")).Which.Body.Should().Contain(MergeGate.CommentMarker);
+    }
+
+    [Fact]
+    public async Task Comando_aprova_em_repositorio_privado_sem_rulesets() {
+        using var key = RSA.Create(2048);
+        var fake = new FakeGitHub {
+            RulesForbiddenBody = """{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","status":"403"}"""
+        };
+        var outDir = Path.Combine(Path.GetTempPath(), "aedis-gate-" + Guid.NewGuid().ToString("N"));
+        var root = new System.CommandLine.RootCommand { PrGateCommand.Create(() => fake) };
+
+        var exit = await root.Parse(["gate", "--org", "acme", "--repo", "bom", "--head-sha", "abcdef1234567890", "--app-id", "12345", "--app-key", key.ExportRSAPrivateKeyPem(), "--out", outDir, "--token", "t"]).InvokeAsync();
+
+        exit.Should().Be(0);
+        var summary = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(outDir, "merge-gate-summary.json")))!;
+        summary["decision"]!.GetValue<string>().Should().Be("approve");
+        fake.Writes.Should().ContainSingle(w => w.Url.EndsWith("/pulls/5/reviews"));
+    }
+
+    [Theory]
+    [InlineData("""{"message":"Resource not accessible by integration","status":"403"}""")]
+    [InlineData("""{"message":"API rate limit exceeded","status":"403"}""")]
+    public async Task Comando_nao_aprova_quando_outro_403_impede_de_ler_as_regras(string body) {
+        using var key = RSA.Create(2048);
+        var fake = new FakeGitHub { RulesForbiddenBody = body };
+        var outDir = Path.Combine(Path.GetTempPath(), "aedis-gate-" + Guid.NewGuid().ToString("N"));
+        var root = new System.CommandLine.RootCommand { PrGateCommand.Create(() => fake) };
+
+        var exit = await root.Parse(["gate", "--org", "acme", "--repo", "bom", "--head-sha", "abcdef1234567890", "--app-id", "12345", "--app-key", key.ExportRSAPrivateKeyPem(), "--out", outDir, "--token", "t"]).InvokeAsync();
+
+        exit.Should().NotBe(0);
+        fake.Writes.Should().NotContain(w => w.Url.EndsWith("/pulls/5/reviews"));
+        fake.Writes.Should().NotContain(w => w.Url.EndsWith("/graphql"));
     }
 
     [Fact]
