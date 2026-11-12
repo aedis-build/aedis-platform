@@ -221,7 +221,7 @@ jobs:
           [ -d "$WD" ] || { echo "::error::working-directory $WD não existe"; exit 1; }
           # Um site com lockfile próprio instala na sua pasta; num monorepo, o lockfile é o da raiz.
           if [ -f "$WD/pnpm-lock.yaml" ]; then echo "dir=$WD" >> "$GITHUB_OUTPUT"; else echo "dir=." >> "$GITHUB_OUTPUT"; fi
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: ${{ steps.install.outputs.dir }}/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -320,7 +320,7 @@ jobs:
           WD: ${{ inputs.working-directory }}
         run: |
           if [ -f "$WD/pnpm-lock.yaml" ]; then echo "dir=$WD" >> "$GITHUB_OUTPUT"; else echo "dir=." >> "$GITHUB_OUTPUT"; fi
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: ${{ steps.install.outputs.dir }}/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -504,7 +504,7 @@ jobs:
           WD: ${{ inputs.working-directory }}
         run: |
           if [ -f "$WD/pnpm-lock.yaml" ]; then echo "dir=$WD" >> "$GITHUB_OUTPUT"; else echo "dir=." >> "$GITHUB_OUTPUT"; fi
-      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+      - uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
         with:
           package_json_file: ${{ steps.install.outputs.dir }}/package.json
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0

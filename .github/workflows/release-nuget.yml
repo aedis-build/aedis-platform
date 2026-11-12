@@ -64,7 +64,7 @@ jobs:
           ref: ${{ inputs.platform-ref != '' && inputs.platform-ref || 'v1' }}
           path: .aedis-platform
           persist-credentials: false
-      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
         with:
           dotnet-version: ${{ inputs.dotnet-version }}
       - name: Empacotar com a versão da tag
@@ -82,7 +82,7 @@ jobs:
           format: spdx-json
           output-file: artifacts/sbom.spdx.json
           upload-artifact: false
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
       - name: Assinar pacotes e SBOM (cosign keyless)
         run: |
           set -euo pipefail
