@@ -77,9 +77,13 @@ public sealed class GitHubApi
             .Select(e => e["name"]!.GetValue<string>()).ToList() ?? [];
     }
 
-    /// <summary>Regras efetivas (de todos os rulesets ativos) sobre um branch.</summary>
+    /// <summary>
+    ///     Regras efetivas (de todos os rulesets ativos) sobre um branch. Repositório privado em plano sem rulesets não
+    ///     tem regras: a lista vem vazia. Qualquer outro 403 (permissão, rate limit) lança, porque a lista vazia faria o
+    ///     portão de merge deixar de exigir os checks obrigatórios.
+    /// </summary>
     public async Task<JsonArray> GetBranchRulesAsync(string org, string repo, string branch, CancellationToken ct) =>
-        await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/rules/branches/{Uri.EscapeDataString(branch)}", ct) ?? [];
+        await GetJsonAsync<JsonArray>($"https://api.github.com/repos/{org}/{repo}/rules/branches/{Uri.EscapeDataString(branch)}", ct, nullOnForbiddenBody: PlanWithoutRulesMessage) ?? [];
 
     /// <summary>Nomes dos check runs concluídos com sucesso no commit mais recente do branch.</summary>
     public async Task<IReadOnlyList<string>> GetSuccessfulCheckNamesAsync(string org, string repo, string branch, CancellationToken ct) {
@@ -306,7 +310,10 @@ public sealed class GitHubApi
         return new ScorecardResult(score.GetValue<double>(), checks);
     }
 
-    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct, bool plainJson = false, bool nullOnForbidden = false) where T : JsonNode {
+    /// <summary>Trecho da resposta 403 do GitHub para um recurso que o plano do repositório privado não inclui.</summary>
+    private const string PlanWithoutRulesMessage = "Upgrade to GitHub Pro or make this repository public";
+
+    private async Task<T?> GetJsonAsync<T>(string url, CancellationToken ct, bool plainJson = false, bool nullOnForbidden = false, string? nullOnForbiddenBody = null) where T : JsonNode {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (plainJson) {
             // A API do Scorecard só aceita application/json e não deve receber o token do GitHub.
@@ -316,9 +323,11 @@ public sealed class GitHubApi
 
         using var response = await _http.SendAsync(request, ct);
         if (response.StatusCode == HttpStatusCode.NotFound || (nullOnForbidden && response.StatusCode == HttpStatusCode.Forbidden)) return null;
+        var body = await response.Content.ReadAsStringAsync(ct);
+        if (nullOnForbiddenBody is not null && response.StatusCode == HttpStatusCode.Forbidden && body.Contains(nullOnForbiddenBody, StringComparison.Ordinal)) return null;
         if (!response.IsSuccessStatusCode)
-            throw new InvalidOperationException($"GitHub respondeu {(int)response.StatusCode} em {url}: {await response.Content.ReadAsStringAsync(ct)}");
-        var node = JsonNode.Parse(await response.Content.ReadAsStringAsync(ct));
+            throw new InvalidOperationException($"GitHub respondeu {(int)response.StatusCode} em {url}: {body}");
+        var node = JsonNode.Parse(body);
         return node as T;
     }
 }
