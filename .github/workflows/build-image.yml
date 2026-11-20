@@ -92,7 +92,7 @@ jobs:
 
       - name: Login GHCR
         if: inputs.registry == 'ghcr'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -121,7 +121,7 @@ jobs:
 
       - name: Login (outro registry)
         if: inputs.registry == 'other'
-        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ${{ inputs.image }}
           username: ${{ secrets.registry-username }}
@@ -153,7 +153,7 @@ jobs:
           curl -sSL "https://github.com/aquasecurity/trivy/releases/download/v${VER}/trivy_${VER}_Linux-64bit.tar.gz" | sudo tar -xz -C /usr/local/bin trivy
           trivy image --quiet --severity "$SEVERITY" --exit-code 1 --ignore-unfixed "$IMAGE@$DIGEST"
 
-      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
         if: inputs.push
       - name: Assinar (cosign keyless)
         if: inputs.push
